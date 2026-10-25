@@ -1,9 +1,11 @@
 package com.example.ui.settings
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -32,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fingerprint
@@ -39,11 +42,16 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,12 +60,16 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -103,6 +115,11 @@ import com.example.ui.theme.TextMutedDark
 import com.example.ui.theme.TextPrimaryDark
 import com.example.ui.theme.TextSecondaryDark
 import com.example.ui.theme.WarningOrange
+import androidx.core.content.ContextCompat
+import com.example.util.AppNotificationManager
+import com.example.util.LockScreenPrivacy
+import com.example.util.NotificationConfig
+import com.example.util.NotificationPreferences
 import com.example.util.PreferenceManager
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
@@ -122,6 +139,20 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
 
     var showSetPinDialog by remember { mutableStateOf(false) }
+
+    val notifPrefs = remember { NotificationPreferences.get(context) }
+    val notifConfig by notifPrefs.configFlow.collectAsState(initial = NotificationConfig())
+
+    val postNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            notifPrefs.setNotificationsEnabled(true)
+            Toast.makeText(context, "تم تفعيل إشعارات التطبيق بنجاح ✓", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "لم يتم منح إذن الإشعارات من النظام", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Intercept back button: if PIN dialog open, dismiss it first; otherwise invoke onBack()
     BackHandler {
@@ -401,7 +432,312 @@ fun SettingsScreen(
                 }
             }
 
-            // Section 2: Biometric & Security Lock
+            // Section 2: App Notifications Settings (إشعارات التطبيق)
+            SettingsSectionHeader(title = "إشعارات التطبيق (نظام التنبيهات المحلي)")
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BorderDark, RoundedCornerShape(16.dp)),
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Master Switch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (notifConfig.areNotificationsEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                contentDescription = null,
+                                tint = if (notifConfig.areNotificationsEnabled) NeonGreen else TextMutedDark,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    "إشعارات التطبيق",
+                                    color = TextPrimaryDark,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    if (notifConfig.areNotificationsEnabled) "مفعلة (شريط الحالة وشاشة القفل)" else "معطلة (افتراضياً)",
+                                    color = if (notifConfig.areNotificationsEnabled) NeonGreen else TextMutedDark,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = notifConfig.areNotificationsEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        val hasPerm = ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.POST_NOTIFICATIONS
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        if (hasPerm) {
+                                            notifPrefs.setNotificationsEnabled(true)
+                                        } else {
+                                            postNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                    } else {
+                                        notifPrefs.setNotificationsEnabled(true)
+                                    }
+                                } else {
+                                    notifPrefs.setNotificationsEnabled(false)
+                                }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = NeonGreen,
+                                uncheckedThumbColor = TextMutedDark,
+                                uncheckedTrackColor = SurfaceElevatedDark
+                            )
+                        )
+                    }
+
+                    // Crucial Safety Assurance Note: Notification toggle does NOT affect saving
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(DarkEmerald.copy(alpha = 0.5f))
+                            .border(1.dp, NeonGreen.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = null,
+                                tint = NeonGreen,
+                                modifier = Modifier.size(16.dp).padding(top = 2.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "حماية وحفظ الرسائل: تعمل خدمة رصد وحفظ الرسائل في قاعدة بيانات Room دائماً وبشكل مستقل تماماً، سواء كانت إشعارات التطبيق مفعلة أو معطلة.",
+                                color = TextPrimaryDark,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    if (notifConfig.areNotificationsEnabled) {
+                        HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
+
+                        // Sub-switch 1: New messages
+                        NotificationSubToggleRow(
+                            title = "إشعارات الرسائل الجديدة",
+                            subtitle = "تنبيه فوري عند وصول وحفظ رسالة من التطبيقات المدعومة",
+                            checked = notifConfig.notifyOnNewMessages,
+                            onCheckedChange = { notifPrefs.setNotifyOnNewMessages(it) }
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Sub-switch 2: Deleted messages
+                        NotificationSubToggleRow(
+                            title = "إشعارات الرسائل المحذوفة",
+                            subtitle = "تنبيه عند اكتشاف حذف الطرف الآخر للرسالة",
+                            checked = notifConfig.notifyOnDeletedMessages,
+                            onCheckedChange = { notifPrefs.setNotifyOnDeletedMessages(it) }
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Sub-switch 3: Sound
+                        NotificationSubToggleRow(
+                            title = "التنبيه الصوتي",
+                            subtitle = "تشغيل صوت الإشعار المخصص عند التنبيه",
+                            checked = notifConfig.isSoundEnabled,
+                            onCheckedChange = { notifPrefs.setSoundEnabled(it) }
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Sub-switch 4: Vibration
+                        NotificationSubToggleRow(
+                            title = "الاهتزاز",
+                            subtitle = "اهتزاز الجهاز عند وصول الإشعار",
+                            checked = notifConfig.isVibrationEnabled,
+                            onCheckedChange = { notifPrefs.setVibrationEnabled(it) }
+                        )
+
+                        HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
+
+                        // Lock Screen Privacy Section
+                        Text(
+                            text = "مستوى خصوصية شاشة القفل",
+                            color = TextPrimaryDark,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "حدد مقدار التفاصيل المعروضة أثناء قفل الهاتف (مع احترام إعدادات خصوصية النظام):",
+                            color = TextSecondaryDark,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        LockScreenPrivacy.entries.forEach { option ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { notifPrefs.setLockScreenPrivacy(option) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = notifConfig.lockScreenPrivacy == option,
+                                    onClick = { notifPrefs.setLockScreenPrivacy(option) },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = NeonGreen,
+                                        unselectedColor = TextMutedDark
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = option.title,
+                                        color = if (notifConfig.lockScreenPrivacy == option) NeonGreen else TextPrimaryDark,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (notifConfig.lockScreenPrivacy == option) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    Text(
+                                        text = option.description,
+                                        color = TextMutedDark,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
+
+                        // App Filters
+                        Text(
+                            text = "التطبيقات المشمولة بالإشعارات",
+                            color = TextPrimaryDark,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "اختر التطبيقات التي تريد تلقي إشعارات منها عند وصول رسائلها:",
+                            color = TextSecondaryDark,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        val appList = listOf(
+                            Triple("واتساب الأصلي", "whatsapp", notifConfig.notifyWhatsApp),
+                            Triple("واتساب المستنسخ (MagicOS)", "whatsapp_twin", notifConfig.notifyWhatsAppTwin),
+                            Triple("ماسنجر (Messenger)", "messenger", notifConfig.notifyMessenger),
+                            Triple("تيليجرام (Telegram)", "telegram", notifConfig.notifyTelegram),
+                            Triple("سيجنال (Signal)", "signal", notifConfig.notifySignal),
+                            Triple("رسائل SMS", "sms", notifConfig.notifySms)
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            appList.forEach { (name, key, isSelected) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { notifPrefs.setAppFilter(key, !isSelected) }
+                                        .padding(vertical = 4.dp, horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(name, color = if (isSelected) TextPrimaryDark else TextMutedDark, fontSize = 12.sp)
+                                    Switch(
+                                        checked = isSelected,
+                                        onCheckedChange = { notifPrefs.setAppFilter(key, it) },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.Black,
+                                            checkedTrackColor = CyanAccent,
+                                            uncheckedThumbColor = TextMutedDark,
+                                            uncheckedTrackColor = SurfaceElevatedDark
+                                        ),
+                                        modifier = Modifier.size(width = 44.dp, height = 24.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                    }
+
+                    // Test and System Settings Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    val hasPerm = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                    if (!hasPerm) {
+                                        postNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        return@Button
+                                    }
+                                }
+                                AppNotificationManager.sendTestNotification(context)
+                                Toast.makeText(context, "تم إرسال إشعار تجريبي!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = DarkEmerald, contentColor = NeonGreen),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("تجربة إشعار", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                AppNotificationManager.openSystemNotificationSettings(context)
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevatedDark, contentColor = CyanAccent),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("إعدادات النظام", fontSize = 12.sp)
+                        }
+                    }
+
+                    // Check if system disabled app notifications
+                    val systemNotificationsAllowed = AppNotificationManager.areSystemNotificationsEnabled(context)
+                    if (!systemNotificationsAllowed) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(DangerRed.copy(alpha = 0.15f))
+                                .padding(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("تنبيه: الإشعارات معطلة لهذا التطبيق في إعدادات Android العامة", color = DangerRed, fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+
+            // Section 3: Biometric & Security Lock
             SettingsSectionHeader(title = "الأمان وقفل التطبيق")
 
             Card(
@@ -625,7 +961,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text("الرسائل المحذوفة • MessageVault Pro", color = TextPrimaryDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("الإصدار: 1.0.0 (Native Android)", color = NeonGreen, fontSize = 11.sp)
+                            Text("الإصدار: 1.0.4 (Native Android)", color = NeonGreen, fontSize = 11.sp)
                         }
                     }
 
@@ -750,3 +1086,33 @@ fun DiagnosticRow(
         }
     }
 }
+
+@Composable
+fun NotificationSubToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = TextPrimaryDark, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = TextMutedDark, fontSize = 11.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.Black,
+                checkedTrackColor = NeonGreen,
+                uncheckedThumbColor = TextMutedDark,
+                uncheckedTrackColor = SurfaceElevatedDark
+            )
+        )
+    }
+}
+

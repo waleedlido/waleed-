@@ -118,6 +118,33 @@ class NotificationVaultService : NotificationListenerService() {
 
                 _lastSavedMessage.value = "${chatTitle}: ${messageText.take(40)}"
                 Log.d(TAG, "Notification processed: $chatTitle -> $messageText, result: $result")
+
+                // Dispatch optional local notification (completely independent of database persistence)
+                when (result) {
+                    is com.example.data.repository.SaveResult.Saved -> {
+                        com.example.util.AppNotificationManager.showNewMessageNotification(
+                            context = applicationContext,
+                            conversationId = result.conversationId,
+                            senderName = senderName,
+                            messageText = messageText,
+                            packageName = packageName,
+                            isClonedApp = isClonedApp,
+                            timestamp = timestamp
+                        )
+                    }
+                    is com.example.data.repository.SaveResult.MarkedDeleted -> {
+                        com.example.util.AppNotificationManager.showDeletedMessageNotification(
+                            context = applicationContext,
+                            conversationId = result.conversationId,
+                            senderName = senderName,
+                            messageText = result.deletedMessageText.ifBlank { messageText },
+                            packageName = packageName,
+                            isClonedApp = isClonedApp,
+                            deletedDetectedAt = timestamp
+                        )
+                    }
+                    else -> {}
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving notification", e)
                 _lastError.value = "خطأ أثناء حفظ الإشعار: ${e.localizedMessage}"

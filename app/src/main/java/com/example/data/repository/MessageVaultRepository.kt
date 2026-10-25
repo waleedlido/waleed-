@@ -57,7 +57,11 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
                         deletedMessagesCount = conversation.deletedMessagesCount + 1
                     )
                     conversationDao.updateConversation(updatedConv)
-                    return@withContext SaveResult.MarkedDeleted(latestMessage.id)
+                    return@withContext SaveResult.MarkedDeleted(
+                        messageId = latestMessage.id,
+                        conversationId = conversation.id,
+                        deletedMessageText = latestMessage.messageText
+                    )
                 }
             }
             return@withContext SaveResult.Ignored("Deletion notice could not be matched")
@@ -123,7 +127,7 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
             isFromClonedApp = isClonedApp
         )
         val messageId = messageDao.insertMessage(message)
-        SaveResult.Saved(messageId)
+        SaveResult.Saved(messageId, conversationId)
     }
 
     suspend fun updateMessageTranslation(messageId: Long, translatedText: String, language: String) =
@@ -328,8 +332,12 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
 }
 
 sealed class SaveResult {
-    data class Saved(val messageId: Long) : SaveResult()
-    data class MarkedDeleted(val messageId: Long) : SaveResult()
+    data class Saved(val messageId: Long, val conversationId: Long = 0L) : SaveResult()
+    data class MarkedDeleted(
+        val messageId: Long,
+        val conversationId: Long = 0L,
+        val deletedMessageText: String = ""
+    ) : SaveResult()
     object Duplicate : SaveResult()
     data class Ignored(val reason: String) : SaveResult()
 }

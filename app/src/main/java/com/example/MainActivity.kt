@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -7,6 +8,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +27,7 @@ import com.example.ui.permissions.PermissionsScreen
 import com.example.ui.splash.SplashScreen
 import com.example.ui.theme.MessageVaultTheme
 import com.example.ui.trash.RecycleBinScreen
+import com.example.util.AppNotificationManager
 import com.example.util.PreferenceManager
 
 sealed class Screen {
@@ -41,14 +44,20 @@ class MainActivity : FragmentActivity() {
     private lateinit var translationManager: TranslationManager
     private lateinit var securityManager: SecurityManager
     private lateinit var preferenceManager: PreferenceManager
+    private val pendingConversationId = mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Initialize Android 8+ Notification Channels
+        AppNotificationManager.initChannels(this)
+
         translationManager = TranslationManager(this)
         securityManager = SecurityManager(this)
         preferenceManager = PreferenceManager(this)
+
+        extractConversationId(intent)
 
         setContent {
             MessageVaultTheme {
@@ -56,10 +65,25 @@ class MainActivity : FragmentActivity() {
                     AppNavigation(
                         translationManager = translationManager,
                         securityManager = securityManager,
-                        preferenceManager = preferenceManager
+                        preferenceManager = preferenceManager,
+                        pendingTargetConvId = pendingConversationId.value,
+                        onConsumePendingTarget = { pendingConversationId.value = null }
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractConversationId(intent)
+    }
+
+    private fun extractConversationId(intent: Intent?) {
+        val targetId = intent?.getLongExtra(AppNotificationManager.EXTRA_CONVERSATION_ID, -1L) ?: -1L
+        if (targetId > 0) {
+            pendingConversationId.value = targetId
         }
     }
 
@@ -73,11 +97,30 @@ class MainActivity : FragmentActivity() {
 fun AppNavigation(
     translationManager: TranslationManager,
     securityManager: SecurityManager,
-    preferenceManager: PreferenceManager
+    preferenceManager: PreferenceManager,
+    pendingTargetConvId: Long? = null,
+    onConsumePendingTarget: () -> Unit = {}
 ) {
     val repository = MessageVaultApp.get().repository
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Splash) }
     val isAppUnlocked by securityManager.isAppUnlocked.collectAsState()
+
+    // Handle incoming notification intent if user is already authenticated
+    LaunchedEffect(pendingTargetConvId, isAppUnlocked, currentScreen) {
+        if (pendingTargetConvId != null) {
+            val isLocked = securityManager.isLockEnabled()
+            val canNavigate = (!isLocked || isAppUnlocked) &&
+                    preferenceManager.isSetupCompleted() &&
+                    preferenceManager.isNotificationAccessGranted() &&
+                    currentScreen !is Screen.Splash &&
+                    currentScreen !is Screen.Auth &&
+                    currentScreen !is Screen.Permissions
+            if (canNavigate) {
+                currentScreen = Screen.ChatDetail(pendingTargetConvId)
+                onConsumePendingTarget()
+            }
+        }
+    }
 
     Crossfade(
         targetState = currentScreen,
@@ -96,7 +139,12 @@ fun AppNavigation(
                         } else if (!preferenceManager.isSetupCompleted() || !preferenceManager.isNotificationAccessGranted()) {
                             currentScreen = Screen.Permissions
                         } else {
-                            currentScreen = Screen.Home
+                            if (pendingTargetConvId != null) {
+                                currentScreen = Screen.ChatDetail(pendingTargetConvId)
+                                onConsumePendingTarget()
+                            } else {
+                                currentScreen = Screen.Home
+                            }
                         }
                     }
                 )
@@ -109,7 +157,12 @@ fun AppNavigation(
                         if (!preferenceManager.isSetupCompleted() || !preferenceManager.isNotificationAccessGranted()) {
                             currentScreen = Screen.Permissions
                         } else {
-                            currentScreen = Screen.Home
+                            if (pendingTargetConvId != null) {
+                                currentScreen = Screen.ChatDetail(pendingTargetConvId)
+                                onConsumePendingTarget()
+                            } else {
+                                currentScreen = Screen.Home
+                            }
                         }
                     }
                 )
@@ -119,7 +172,12 @@ fun AppNavigation(
                 PermissionsScreen(
                     preferenceManager = preferenceManager,
                     onSetupCompleted = {
-                        currentScreen = Screen.Home
+                        if (pendingTargetConvId != null) {
+                            currentScreen = Screen.ChatDetail(pendingTargetConvId)
+                            onConsumePendingTarget()
+                        } else {
+                            currentScreen = Screen.Home
+                        }
                     }
                 )
             }
@@ -161,3 +219,4 @@ fun AppNavigation(
         }
     }
 }
+

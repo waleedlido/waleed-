@@ -26,11 +26,22 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x ./gradlew
 
-    - name: Ensure Debug Keystore Exists
+    - name: Restore Persistent Keystore
+      env:
+        SECRET_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 }}
       run: |
-        if [ ! -f "debug.keystore" ]; then
+        if [ -n "$SECRET_KEYSTORE" ]; then
+          echo "Restoring keystore from GitHub Secret..."
+          echo "$SECRET_KEYSTORE" | base64 -d > debug.keystore
+        elif [ -f "debug.keystore.base64" ]; then
+          echo "Restoring persistent keystore from debug.keystore.base64..."
+          base64 -d debug.keystore.base64 > debug.keystore
+        elif [ ! -f "debug.keystore" ]; then
+          echo "Generating fallback debug.keystore..."
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
         fi
+        echo "Keystore verified. Certificate SHA-256:"
+        keytool -list -v -keystore debug.keystore -storepass android | grep "SHA256:" || true
 
     - name: Run Unit Tests
       run: ./gradlew :app:testDebugUnitTest --no-daemon
@@ -41,6 +52,6 @@ jobs:
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DeletedMessages-v1.0.0-APK
+        name: DeletedMessages-v1.0.2-APK
         path: app/build/outputs/apk/debug/app-debug.apk
         retention-days: 30

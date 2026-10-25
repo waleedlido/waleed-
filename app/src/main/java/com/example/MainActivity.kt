@@ -24,6 +24,7 @@ import com.example.ui.home.HomeScreen
 import com.example.ui.permissions.PermissionsScreen
 import com.example.ui.splash.SplashScreen
 import com.example.ui.theme.MessageVaultTheme
+import com.example.ui.trash.RecycleBinScreen
 import com.example.util.PreferenceManager
 
 sealed class Screen {
@@ -31,6 +32,7 @@ sealed class Screen {
     object Auth : Screen()
     object Permissions : Screen()
     object Home : Screen()
+    object Trash : Screen()
     data class ChatDetail(val conversationId: Long) : Screen()
 }
 
@@ -130,6 +132,18 @@ fun AppNavigation(
                     preferenceManager = preferenceManager,
                     onConversationClick = { conversationId ->
                         currentScreen = Screen.ChatDetail(conversationId)
+                    },
+                    onNavigateToTrash = {
+                        currentScreen = Screen.Trash
+                    }
+                )
+            }
+
+            is Screen.Trash -> {
+                RecycleBinScreen(
+                    repository = repository,
+                    onBack = {
+                        currentScreen = Screen.Home
                     }
                 )
             }

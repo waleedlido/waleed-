@@ -240,7 +240,7 @@ fun ChatDetailScreen(
                             onClick = {
                                 showMenu = false
                                 coroutineScope.launch {
-                                    repository.deleteConversation(conversationId)
+                                    repository.moveConversationToTrash(conversationId)
                                     onBack()
                                 }
                             }

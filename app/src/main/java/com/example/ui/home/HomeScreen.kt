@@ -3,10 +3,13 @@ package com.example.ui.home
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,31 +30,47 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoDelete
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,7 +89,6 @@ import com.example.data.model.ConversationEntity
 import com.example.data.repository.MessageVaultRepository
 import com.example.ml.TranslationManager
 import com.example.security.SecurityManager
-import com.example.service.NotificationVaultService
 import com.example.ui.components.AppAvatarIcon
 import com.example.ui.components.AppSourceBadge
 import com.example.ui.home.tabs.DeletedTab
@@ -108,71 +126,155 @@ fun HomeScreen(
     translationManager: TranslationManager,
     securityManager: SecurityManager,
     preferenceManager: PreferenceManager,
-    onConversationClick: (Long) -> Unit
+    onConversationClick: (Long) -> Unit,
+    onNavigateToTrash: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     var selectedTab by remember { mutableStateOf(MainTab.HOME) }
     val homeListState = rememberLazyListState()
 
-    // Back button behavior: if on any sub-tab, return to HOME tab; if on HOME tab, default system exit
-    BackHandler(enabled = selectedTab != MainTab.HOME) {
-        selectedTab = MainTab.HOME
+    // Multi-selection state
+    val selectedIds = remember { mutableStateListOf<Long>() }
+    val isSelectionMode = selectedIds.isNotEmpty()
+
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    // Intercept back button:
+    // 1. If in selection mode, cancel selection mode first.
+    // 2. If on another tab, return to HOME tab.
+    // 3. If on HOME tab without selection, default OS back (exit).
+    BackHandler(enabled = isSelectionMode || selectedTab != MainTab.HOME) {
+        if (isSelectionMode) {
+            selectedIds.clear()
+        } else {
+            selectedTab = MainTab.HOME
+        }
     }
 
     val isNotificationAccessActive = preferenceManager.isNotificationAccessGranted()
     val conversations by repository.allConversations.collectAsState(initial = emptyList())
+    val trashCount by repository.trashCount.collectAsState(initial = 0)
     val totalDeleted = conversations.sumOf { it.deletedMessagesCount }
 
     Scaffold(
         containerColor = DeepObsidian,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SurfaceDark,
-                    titleContentColor = TextPrimaryDark
-                ),
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(DarkEmerald),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shield,
-                                contentDescription = null,
-                                tint = NeonGreen,
-                                modifier = Modifier.size(20.dp)
-                            )
+            if (isSelectionMode) {
+                // Contextual Multi-Selection Top Bar
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = SurfaceElevatedDark,
+                        titleContentColor = TextPrimaryDark
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = { selectedIds.clear() }) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "إلغاء التحديد", tint = TextPrimaryDark)
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "الرسائل المحذوفة",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimaryDark
-                            )
-                            Text(
-                                text = when (selectedTab) {
-                                    MainTab.HOME -> if (totalDeleted > 0) "$totalDeleted رسالة محذوفة موثقة 🔒" else "الخزينة نشطة وتراقب"
-                                    MainTab.DELETED -> "سجل الرسائل المسترجعة ($totalDeleted)"
-                                    MainTab.SEARCH -> "البحث الشامل في الرسائل"
-                                    MainTab.SETTINGS -> "الإعدادات وحالة الخدمة"
-                                },
-                                fontSize = 11.sp,
-                                color = if (totalDeleted > 0 && (selectedTab == MainTab.HOME || selectedTab == MainTab.DELETED)) NeonGreen else TextMutedDark
-                            )
+                    },
+                    title = {
+                        Text(
+                            text = "تم تحديد ${selectedIds.size}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimaryDark
+                        )
+                    },
+                    actions = {
+                        // Select All button
+                        IconButton(onClick = {
+                            if (selectedIds.size == conversations.size) {
+                                selectedIds.clear()
+                            } else {
+                                selectedIds.clear()
+                                selectedIds.addAll(conversations.map { it.id })
+                            }
+                        }) {
+                            Icon(imageVector = Icons.Default.SelectAll, contentDescription = "تحديد الكل", tint = CyanAccent)
+                        }
+
+                        // Delete Selected button (moves to Recycle Bin)
+                        IconButton(onClick = { showDeleteConfirmDialog = true }) {
+                            Icon(imageVector = Icons.Default.Delete, contentDescription = "نقل إلى سلة المحذوفات", tint = DangerRed)
                         }
                     }
-                }
-            )
+                )
+            } else {
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = SurfaceDark,
+                        titleContentColor = TextPrimaryDark
+                    ),
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(DarkEmerald),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = NeonGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "الرسائل المحذوفة",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimaryDark
+                                )
+                                Text(
+                                    text = when (selectedTab) {
+                                        MainTab.HOME -> if (totalDeleted > 0) "$totalDeleted رسالة محذوفة موثقة 🔒" else "الخزينة نشطة وتراقب"
+                                        MainTab.DELETED -> "سجل الرسائل المسترجعة ($totalDeleted)"
+                                        MainTab.SEARCH -> "البحث الشامل في الرسائل"
+                                        MainTab.SETTINGS -> "الإعدادات وحالة الخدمة"
+                                    },
+                                    fontSize = 11.sp,
+                                    color = if (totalDeleted > 0 && (selectedTab == MainTab.HOME || selectedTab == MainTab.DELETED)) NeonGreen else TextMutedDark
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        // Recycle Bin Shortcut with badge count
+                        IconButton(
+                            onClick = onNavigateToTrash,
+                            modifier = Modifier.testTag("recycle_bin_shortcut")
+                        ) {
+                            BadgedBox(
+                                badge = {
+                                    if (trashCount > 0) {
+                                        Badge(
+                                            containerColor = DangerRed,
+                                            contentColor = Color.White
+                                        ) {
+                                            Text("$trashCount")
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoDelete,
+                                    contentDescription = "سلة المحذوفات",
+                                    tint = if (trashCount > 0) DangerRed else TextSecondaryDark
+                                )
+                            }
+                        }
+                    }
+                )
+            }
         },
         bottomBar = {
-            // Fixed Bottom Navigation Bar with 4 Tabs in Dark Green / Obsidian Style
             NavigationBar(
                 containerColor = SurfaceDark,
                 tonalElevation = 8.dp,
@@ -183,7 +285,10 @@ fun HomeScreen(
                 // Tab 1: Home
                 NavigationBarItem(
                     selected = selectedTab == MainTab.HOME,
-                    onClick = { selectedTab = MainTab.HOME },
+                    onClick = {
+                        if (isSelectionMode) selectedIds.clear()
+                        selectedTab = MainTab.HOME
+                    },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Forum,
@@ -210,7 +315,10 @@ fun HomeScreen(
                 // Tab 2: Deleted Messages
                 NavigationBarItem(
                     selected = selectedTab == MainTab.DELETED,
-                    onClick = { selectedTab = MainTab.DELETED },
+                    onClick = {
+                        if (isSelectionMode) selectedIds.clear()
+                        selectedTab = MainTab.DELETED
+                    },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.DeleteSweep,
@@ -237,7 +345,10 @@ fun HomeScreen(
                 // Tab 3: Search
                 NavigationBarItem(
                     selected = selectedTab == MainTab.SEARCH,
-                    onClick = { selectedTab = MainTab.SEARCH },
+                    onClick = {
+                        if (isSelectionMode) selectedIds.clear()
+                        selectedTab = MainTab.SEARCH
+                    },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -264,7 +375,10 @@ fun HomeScreen(
                 // Tab 4: Settings & Service Status
                 NavigationBarItem(
                     selected = selectedTab == MainTab.SETTINGS,
-                    onClick = { selectedTab = MainTab.SETTINGS },
+                    onClick = {
+                        if (isSelectionMode) selectedIds.clear()
+                        selectedTab = MainTab.SETTINGS
+                    },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -300,8 +414,21 @@ fun HomeScreen(
                     HomeTabContent(
                         listState = homeListState,
                         conversations = conversations,
+                        selectedIds = selectedIds,
+                        isSelectionMode = isSelectionMode,
                         isNotificationAccessActive = isNotificationAccessActive,
-                        onConversationClick = onConversationClick,
+                        onConversationClick = { id ->
+                            if (isSelectionMode) {
+                                if (selectedIds.contains(id)) selectedIds.remove(id) else selectedIds.add(id)
+                            } else {
+                                onConversationClick(id)
+                            }
+                        },
+                        onConversationLongClick = { id ->
+                            if (!selectedIds.contains(id)) {
+                                selectedIds.add(id)
+                            }
+                        },
                         onInjectTestMessage = {
                             coroutineScope.launch {
                                 val testTime = System.currentTimeMillis()
@@ -369,14 +496,64 @@ fun HomeScreen(
             }
         }
     }
+
+    // Confirmation Dialog before moving conversations to trash
+    if (showDeleteConfirmDialog) {
+        val count = selectedIds.size
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            containerColor = SurfaceDark,
+            title = {
+                Text("نقل إلى سلة المحذوفات؟", color = TextPrimaryDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text(
+                    "سيتم نقل $count محادثة إلى «سلة المحذوفات». يمكنك استعادتها في أي وقت أو حذفها نهائيًا من هناك.",
+                    color = TextSecondaryDark,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        val idsToTrash = selectedIds.toList()
+                        selectedIds.clear()
+                        coroutineScope.launch {
+                            repository.moveMultipleToTrash(idsToTrash)
+                            val snackbarResult = snackbarHostState.showSnackbar(
+                                message = "تم نقل $count محادثة إلى سلة المحذوفات",
+                                actionLabel = "تراجع",
+                                duration = SnackbarDuration.Short
+                            )
+                            if (snackbarResult == SnackbarResult.ActionPerformed) {
+                                repository.restoreMultipleFromTrash(idsToTrash)
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed, contentColor = Color.White)
+                ) {
+                    Text("نقل للسلة")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("إلغاء", color = TextMutedDark)
+                }
+            }
+        )
+    }
 }
 
 @Composable
 fun HomeTabContent(
     listState: LazyListState,
     conversations: List<ConversationEntity>,
+    selectedIds: List<Long>,
+    isSelectionMode: Boolean,
     isNotificationAccessActive: Boolean,
     onConversationClick: (Long) -> Unit,
+    onConversationLongClick: (Long) -> Unit,
     onInjectTestMessage: () -> Unit
 ) {
     val context = LocalContext.current
@@ -394,7 +571,6 @@ fun HomeTabContent(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Warning Banner if Notification Access was revoked
         if (!isNotificationAccessActive) {
             AccessRevokedBanner(context = context)
         }
@@ -451,9 +627,13 @@ fun HomeTabContent(
                     items = filteredConversations,
                     key = { it.id }
                 ) { conversation ->
+                    val isSelected = selectedIds.contains(conversation.id)
                     ConversationCard(
                         conversation = conversation,
-                        onClick = { onConversationClick(conversation.id) }
+                        isSelected = isSelected,
+                        isSelectionMode = isSelectionMode,
+                        onClick = { onConversationClick(conversation.id) },
+                        onLongClick = { onConversationLongClick(conversation.id) }
                     )
                 }
             }
@@ -496,24 +676,53 @@ fun AccessRevokedBanner(context: Context) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ConversationCard(
     conversation: ConversationEntity,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, BorderDark, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) NeonGreen else BorderDark,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .testTag("conversation_card_${conversation.id}"),
-        colors = CardDefaults.cardColors(containerColor = SurfaceDark)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) SurfaceElevatedDark else SurfaceDark
+        )
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isSelectionMode) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(if (isSelected) NeonGreen else SurfaceElevatedDark)
+                        .border(1.5.dp, if (isSelected) NeonGreen else BorderDark, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+
             AppAvatarIcon(
                 packageName = conversation.packageName,
                 chatTitle = conversation.chatTitle,
@@ -565,13 +774,11 @@ fun ConversationCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Badge for App source (WhatsApp, App Twin, Telegram, etc.)
                         AppSourceBadge(
                             packageName = conversation.packageName,
                             isClonedApp = conversation.isClonedApp
                         )
 
-                        // Badge if has deleted messages
                         if (conversation.deletedMessagesCount > 0) {
                             Box(
                                 modifier = Modifier
@@ -588,7 +795,6 @@ fun ConversationCard(
                             }
                         }
 
-                        // Message count badge
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)

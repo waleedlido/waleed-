@@ -1,8 +1,10 @@
 package com.example.data.repository
 
+import com.example.MessageVaultApp
 import com.example.data.database.MessageVaultDatabase
 import com.example.data.model.ConversationEntity
 import com.example.data.model.MessageEntity
+import com.example.util.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -16,6 +18,8 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
     private val messageDao = database.messageDao()
 
     val allConversations: Flow<List<ConversationEntity>> = conversationDao.getAllConversationsFlow()
+    val trashConversations: Flow<List<ConversationEntity>> = conversationDao.getTrashConversationsFlow()
+    val trashCount: Flow<Int> = conversationDao.getTrashCountFlow()
 
     fun searchConversations(query: String): Flow<List<ConversationEntity>> =
         conversationDao.searchConversationsFlow(query)
@@ -44,7 +48,6 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
 
         // Check if this notification indicates a deleted message
         if (isDeletionIndicator(trimmedText)) {
-            // Find existing conversation
             val conversation = conversationDao.findConversation(packageName, chatTitle, isClonedApp)
             if (conversation != null) {
                 val latestMessage = messageDao.getLatestNonDeletedMessage(conversation.id)
@@ -74,6 +77,9 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
         var conversation = conversationDao.findConversation(packageName, chatTitle, isClonedApp)
         val conversationId: Long
 
+        val prefManager = PreferenceManager(MessageVaultApp.get())
+        val shouldAutoRestore = prefManager.isAutoRestoreOnNewMessage()
+
         if (conversation == null) {
             val newConversation = ConversationEntity(
                 packageName = packageName,
@@ -84,16 +90,25 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
                 lastMessageText = trimmedText,
                 lastMessageTimestamp = timestamp,
                 messageCount = 1,
-                deletedMessagesCount = 0
+                deletedMessagesCount = 0,
+                isInTrash = false,
+                trashedAt = null
             )
             conversationId = conversationDao.insertConversation(newConversation)
         } else {
             conversationId = conversation.id
+            // If conversation is in trash, save message without losing it!
+            // Restore only if auto-restore setting is explicitly enabled
+            val newTrashState = if (conversation.isInTrash && shouldAutoRestore) false else conversation.isInTrash
+            val newTrashedAt = if (conversation.isInTrash && shouldAutoRestore) null else conversation.trashedAt
+
             val updatedConv = conversation.copy(
                 lastMessageText = trimmedText,
                 lastMessageTimestamp = timestamp,
                 messageCount = conversation.messageCount + 1,
-                appDisplayName = appDisplayName
+                appDisplayName = appDisplayName,
+                isInTrash = newTrashState,
+                trashedAt = newTrashedAt
             )
             conversationDao.updateConversation(updatedConv)
         }
@@ -116,8 +131,43 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
             messageDao.updateTranslation(messageId, translatedText, language)
         }
 
-    suspend fun deleteConversation(id: Long) = withContext(Dispatchers.IO) {
-        conversationDao.deleteConversationById(id)
+    // Soft delete: move to trash
+    suspend fun moveConversationToTrash(id: Long) = withContext(Dispatchers.IO) {
+        conversationDao.moveToTrash(id, System.currentTimeMillis())
+    }
+
+    suspend fun deleteConversation(id: Long) = moveConversationToTrash(id)
+
+    suspend fun moveMultipleToTrash(ids: List<Long>) = withContext(Dispatchers.IO) {
+        if (ids.isNotEmpty()) {
+            conversationDao.moveMultipleToTrash(ids, System.currentTimeMillis())
+        }
+    }
+
+    // Restore from trash
+    suspend fun restoreConversationFromTrash(id: Long) = withContext(Dispatchers.IO) {
+        conversationDao.restoreFromTrash(id)
+    }
+
+    suspend fun restoreMultipleFromTrash(ids: List<Long>) = withContext(Dispatchers.IO) {
+        if (ids.isNotEmpty()) {
+            conversationDao.restoreMultipleFromTrash(ids)
+        }
+    }
+
+    // Permanent delete
+    suspend fun permanentlyDeleteConversation(id: Long) = withContext(Dispatchers.IO) {
+        conversationDao.permanentlyDeleteById(id)
+    }
+
+    suspend fun permanentlyDeleteMultiple(ids: List<Long>) = withContext(Dispatchers.IO) {
+        if (ids.isNotEmpty()) {
+            conversationDao.permanentlyDeleteMultiple(ids)
+        }
+    }
+
+    suspend fun emptyTrash() = withContext(Dispatchers.IO) {
+        conversationDao.emptyTrash()
     }
 
     suspend fun deleteMessage(id: Long) = withContext(Dispatchers.IO) {
@@ -130,11 +180,13 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
 
     suspend fun getStats(): VaultStats = withContext(Dispatchers.IO) {
         val convCount = conversationDao.getConversationsCount()
+        val trashCount = conversationDao.getTrashConversationsCount()
         val msgCount = messageDao.getTotalMessagesCount()
         val deletedCount = messageDao.getTotalDeletedMessagesCount()
         val latest = messageDao.getMostRecentMessage()
         VaultStats(
             conversationsCount = convCount,
+            trashCount = trashCount,
             messagesCount = msgCount,
             deletedMessagesCount = deletedCount,
             lastMessage = latest
@@ -144,7 +196,7 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
     // Storage Access Framework JSON Export
     suspend fun exportDataToJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("exportedAt", System.currentTimeMillis())
         root.put("appName", "الرسائل المحذوفة")
         root.put("developer", "Waleed Al-khatib")
@@ -163,6 +215,7 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
             convObj.put("lastMessageTimestamp", c.lastMessageTimestamp)
             convObj.put("messageCount", c.messageCount)
             convObj.put("deletedMessagesCount", c.deletedMessagesCount)
+            convObj.put("isInTrash", c.isInTrash)
 
             val messages = messageDao.getMessagesForConversationList(c.id)
             val msgArray = JSONArray()
@@ -202,6 +255,7 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
                 val appDisplayName = cObj.optString("appDisplayName", "تطبيق محادثة")
                 val lastMessageText = cObj.optString("lastMessageText", "")
                 val lastMessageTimestamp = cObj.optLong("lastMessageTimestamp", System.currentTimeMillis())
+                val isInTrash = cObj.optBoolean("isInTrash", false)
 
                 var conv = conversationDao.findConversation(packageName, chatTitle, isClonedApp)
                 val convId: Long
@@ -212,7 +266,8 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
                         chatTitle = chatTitle,
                         isClonedApp = isClonedApp,
                         lastMessageText = lastMessageText,
-                        lastMessageTimestamp = lastMessageTimestamp
+                        lastMessageTimestamp = lastMessageTimestamp,
+                        isInTrash = isInTrash
                     )
                     convId = conversationDao.insertConversation(newConv)
                     totalRestoredConvs++
@@ -286,6 +341,7 @@ sealed class ImportResult {
 
 data class VaultStats(
     val conversationsCount: Int,
+    val trashCount: Int,
     val messagesCount: Int,
     val deletedMessagesCount: Int,
     val lastMessage: MessageEntity?

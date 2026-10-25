@@ -1,11 +1,9 @@
 package com.example.util
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
-import com.example.service.NotificationVaultService
 
 class PreferenceManager(private val context: Context) {
 
@@ -34,8 +32,17 @@ class PreferenceManager(private val context: Context) {
         return false
     }
 
+    fun isAutoRestoreOnNewMessage(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_RESTORE_ON_NEW_MESSAGE, false)
+    }
+
+    fun setAutoRestoreOnNewMessage(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_RESTORE_ON_NEW_MESSAGE, enabled).apply()
+    }
+
     companion object {
         private const val PREF_NAME = "message_vault_app_prefs"
         private const val KEY_SETUP_COMPLETED = "key_setup_completed"
+        private const val KEY_AUTO_RESTORE_ON_NEW_MESSAGE = "key_auto_restore_on_new_message"
     }
 }

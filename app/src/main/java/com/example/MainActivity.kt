@@ -22,7 +22,6 @@ import com.example.ui.auth.AuthScreen
 import com.example.ui.chat.ChatDetailScreen
 import com.example.ui.home.HomeScreen
 import com.example.ui.permissions.PermissionsScreen
-import com.example.ui.settings.SettingsScreen
 import com.example.ui.splash.SplashScreen
 import com.example.ui.theme.MessageVaultTheme
 import com.example.util.PreferenceManager
@@ -33,7 +32,6 @@ sealed class Screen {
     object Permissions : Screen()
     object Home : Screen()
     data class ChatDetail(val conversationId: Long) : Screen()
-    object Settings : Screen()
 }
 
 class MainActivity : FragmentActivity() {
@@ -87,6 +85,8 @@ fun AppNavigation(
         when (screen) {
             is Screen.Splash -> {
                 SplashScreen(
+                    translationManager = translationManager,
+                    preferenceManager = preferenceManager,
                     onSplashFinished = {
                         val isLocked = securityManager.isLockEnabled()
                         if (isLocked && !isAppUnlocked) {
@@ -125,12 +125,11 @@ fun AppNavigation(
             is Screen.Home -> {
                 HomeScreen(
                     repository = repository,
+                    translationManager = translationManager,
+                    securityManager = securityManager,
                     preferenceManager = preferenceManager,
                     onConversationClick = { conversationId ->
                         currentScreen = Screen.ChatDetail(conversationId)
-                    },
-                    onNavigateToSettings = {
-                        currentScreen = Screen.Settings
                     }
                 )
             }
@@ -140,18 +139,6 @@ fun AppNavigation(
                     conversationId = screen.conversationId,
                     repository = repository,
                     translationManager = translationManager,
-                    onBack = {
-                        currentScreen = Screen.Home
-                    }
-                )
-            }
-
-            is Screen.Settings -> {
-                SettingsScreen(
-                    repository = repository,
-                    translationManager = translationManager,
-                    securityManager = securityManager,
-                    preferenceManager = preferenceManager,
                     onBack = {
                         currentScreen = Screen.Home
                     }

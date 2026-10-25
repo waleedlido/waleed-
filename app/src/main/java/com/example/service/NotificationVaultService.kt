@@ -1,8 +1,9 @@
 package com.example.service
 
 import android.app.Notification
+import android.content.ComponentName
+import android.content.Context
 import android.os.Build
-import android.os.Process
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -22,6 +23,7 @@ class NotificationVaultService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         _isServiceConnected.value = true
+        _lastError.value = null
         Log.d(TAG, "NotificationVaultService connected successfully")
     }
 
@@ -29,6 +31,14 @@ class NotificationVaultService : NotificationListenerService() {
         super.onListenerDisconnected()
         _isServiceConnected.value = false
         Log.d(TAG, "NotificationVaultService disconnected")
+        // Attempt clean rebind if system permits (API 24+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                requestRebind(ComponentName(this, NotificationVaultService::class.java))
+            } catch (e: Exception) {
+                Log.w(TAG, "Rebind request failed: ${e.message}")
+            }
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -94,14 +104,16 @@ class NotificationVaultService : NotificationListenerService() {
                     appDisplayName = appDisplayName,
                     chatTitle = chatTitle,
                     senderName = senderName,
-                    messageSnippet = messageText.take(40),
+                    messageSnippet = messageText.take(60),
                     timestamp = timestamp,
                     isClonedApp = isClonedApp
                 )
 
+                _lastSavedMessage.value = "${chatTitle}: ${messageText.take(40)}"
                 Log.d(TAG, "Notification processed: $chatTitle -> $messageText, result: $result")
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving notification", e)
+                _lastError.value = "خطأ أثناء حفظ الإشعار: ${e.localizedMessage}"
             }
         }
     }
@@ -160,7 +172,6 @@ class NotificationVaultService : NotificationListenerService() {
         return try {
             val user = sbn.user
             val stringRep = user.toString()
-            // Typically UserHandle{0} or UserHandle{999}
             val match = Regex("\\d+").find(stringRep)
             match?.value?.toIntOrNull() ?: 0
         } catch (e: Exception) {
@@ -207,7 +218,7 @@ class NotificationVaultService : NotificationListenerService() {
             pkg.startsWith("org.thoughtcrime.securesms") -> "سيجنال"
             pkg == "com.facebook.orca" -> "ماسنجر"
             pkg == "com.instagram.android" -> "إنستغرام"
-            pkg == "com.google.android.apps.messaging" || pkg == "com.android.mms" -> "الرسائل القصيرة SMS"
+            pkg == "com.google.android.apps.messaging" || pkg == "com.android.mms" -> "رسائل SMS"
             else -> "تطبيق محادثة"
         }
         return if (isCloned) "$baseName (مستنسخ / App Twin)" else baseName
@@ -221,6 +232,24 @@ class NotificationVaultService : NotificationListenerService() {
 
         private val _lastReceivedEvent = MutableStateFlow<ServiceEvent?>(null)
         val lastReceivedEvent: StateFlow<ServiceEvent?> = _lastReceivedEvent.asStateFlow()
+
+        private val _lastSavedMessage = MutableStateFlow<String?>(null)
+        val lastSavedMessage: StateFlow<String?> = _lastSavedMessage.asStateFlow()
+
+        private val _lastError = MutableStateFlow<String?>(null)
+        val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+        fun tryRebind(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    NotificationListenerService.requestRebind(
+                        ComponentName(context, NotificationVaultService::class.java)
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Manual rebind failed: ${e.message}")
+                }
+            }
+        }
     }
 }
 

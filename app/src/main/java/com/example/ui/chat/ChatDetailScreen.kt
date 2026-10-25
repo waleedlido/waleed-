@@ -30,7 +30,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Warning
@@ -73,7 +72,8 @@ import com.example.data.model.MessageEntity
 import com.example.data.repository.MessageVaultRepository
 import com.example.ml.TranslationManager
 import com.example.ml.TranslationResult
-import com.example.ui.home.formatTime
+import com.example.ui.components.AppAvatarIcon
+import com.example.ui.components.AppSourceBadge
 import com.example.ui.theme.BorderDark
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DangerRed
@@ -83,11 +83,13 @@ import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.SurfaceDark
 import com.example.ui.theme.SurfaceElevatedDark
-import com.example.ui.theme.SurfaceVariantDark
 import com.example.ui.theme.TextMutedDark
 import com.example.ui.theme.TextPrimaryDark
 import com.example.ui.theme.TextSecondaryDark
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,8 +103,15 @@ fun ChatDetailScreen(
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
+    var showMenu by remember { mutableStateOf(false) }
+
+    // Intercept back button: if menu is open close it first, otherwise onBack() returns to Home
     BackHandler {
-        onBack()
+        if (showMenu) {
+            showMenu = false
+        } else {
+            onBack()
+        }
     }
 
     var conversation by remember { mutableStateOf<ConversationEntity?>(null) }
@@ -138,7 +147,6 @@ fun ChatDetailScreen(
         }
     }
 
-    var showMenu by remember { mutableStateOf(false) }
     var isTranslatingAll by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -159,27 +167,40 @@ fun ChatDetailScreen(
                     }
                 },
                 title = {
-                    Column {
-                        Text(
-                            text = conversation?.chatTitle ?: "المحادثة",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimaryDark,
-                            maxLines = 1
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = conversation?.appDisplayName ?: "",
-                                fontSize = 11.sp,
-                                color = if (conversation?.isClonedApp == true) CyanAccent else NeonGreen
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        conversation?.let { conv ->
+                            AppAvatarIcon(
+                                packageName = conv.packageName,
+                                chatTitle = conv.chatTitle,
+                                isClonedApp = conv.isClonedApp,
+                                modifier = Modifier.size(38.dp)
                             )
-                            if (conversation?.deletedMessagesCount ?: 0 > 0) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "• ${conversation?.deletedMessagesCount} رسالة محذوفة",
-                                    fontSize = 11.sp,
-                                    color = DangerRed
-                                )
+                            Spacer(modifier = Modifier.width(10.dp))
+                        }
+                        Column {
+                            Text(
+                                text = conversation?.chatTitle ?: "المحادثة",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimaryDark,
+                                maxLines = 1
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                conversation?.let { conv ->
+                                    AppSourceBadge(
+                                        packageName = conv.packageName,
+                                        isClonedApp = conv.isClonedApp
+                                    )
+                                    if (conv.deletedMessagesCount > 0) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "• ${conv.deletedMessagesCount} محذوفة",
+                                            fontSize = 10.sp,
+                                            color = DangerRed,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -194,7 +215,7 @@ fun ChatDetailScreen(
                         modifier = Modifier.background(SurfaceDark)
                     ) {
                         DropdownMenuItem(
-                            text = { Text("ترجمة جميع الرسائل", color = TextPrimaryDark) },
+                            text = { Text("ترجمة جميع الرسائل الظاهرة", color = TextPrimaryDark) },
                             leadingIcon = { Icon(Icons.Default.Translate, contentDescription = null, tint = NeonGreen) },
                             onClick = {
                                 showMenu = false
@@ -248,6 +269,8 @@ fun ChatDetailScreen(
                 ) { message ->
                     MessageBubble(
                         message = message,
+                        packageName = conversation?.packageName ?: "",
+                        isClonedApp = conversation?.isClonedApp ?: false,
                         onTranslateClick = {
                             coroutineScope.launch {
                                 val result = translationManager.translateText(message.messageText)
@@ -360,6 +383,8 @@ fun ChatDetailScreen(
 @Composable
 fun MessageBubble(
     message: MessageEntity,
+    packageName: String,
+    isClonedApp: Boolean,
     onTranslateClick: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -381,26 +406,37 @@ fun MessageBubble(
                     shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
                 ),
             colors = CardDefaults.cardColors(
-                containerColor = if (message.isDeletedBySender) Color(0xFF160B0D) else SurfaceDark
+                containerColor = if (message.isDeletedBySender) Color(0xFF180B0D) else SurfaceDark
             ),
             shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
 
-                // Sender Name & Timestamp
+                // Sender Name, App Badge & Full Timestamp
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Text(
+                            text = message.senderName,
+                            color = if (message.isDeletedBySender) DangerRed else NeonGreen,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        AppSourceBadge(
+                            packageName = packageName,
+                            isClonedApp = message.isFromClonedApp || isClonedApp
+                        )
+                    }
+
                     Text(
-                        text = message.senderName,
-                        color = if (message.isDeletedBySender) DangerRed else NeonGreen,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = formatTime(message.timestamp),
+                        text = formatDetailedDate(message.timestamp),
                         color = TextMutedDark,
                         fontSize = 10.sp
                     )
@@ -436,12 +472,12 @@ fun MessageBubble(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Original Message Text (Never altered!)
+                // Original Message Text (Complete text, never overwritten)
                 Text(
                     text = message.messageText,
                     color = TextPrimaryDark,
                     fontSize = 14.sp,
-                    lineHeight = 21.sp
+                    lineHeight = 22.sp
                 )
 
                 // Translated Text Block if exists
@@ -468,12 +504,16 @@ fun MessageBubble(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "نسخ",
+                                    text = "نسخ الترجمة",
                                     color = CyanAccent,
                                     fontSize = 11.sp,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(4.dp))
                                         .background(SurfaceElevatedDark)
+                                        .clickable {
+                                            clipboardManager.setText(AnnotatedString(message.translatedText ?: ""))
+                                            Toast.makeText(context, "تم نسخ الترجمة", Toast.LENGTH_SHORT).show()
+                                        }
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -490,7 +530,7 @@ fun MessageBubble(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Bottom actions row (Translate button, copy)
+                // Bottom Actions Row (Translate button & Copy button)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -536,7 +576,7 @@ fun MessageBubble(
                             .background(SurfaceElevatedDark)
                             .clickable {
                                 clipboardManager.setText(AnnotatedString(message.messageText))
-                                Toast.makeText(context, "تم نسخ النص", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "تم نسخ النص الأصلي", Toast.LENGTH_SHORT).show()
                             }
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
@@ -550,4 +590,9 @@ fun MessageBubble(
             }
         }
     }
+}
+
+fun formatDetailedDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("d MMM، h:mm a", Locale("ar"))
+    return sdf.format(Date(timestamp))
 }

@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Translate
@@ -81,8 +82,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationCompat
-import com.example.MessageVaultApp
 import com.example.data.repository.ImportResult
 import com.example.data.repository.MessageVaultRepository
 import com.example.data.repository.VaultStats
@@ -97,7 +96,6 @@ import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.DarkEmerald
 import com.example.ui.theme.DeepObsidian
-import com.example.ui.theme.GoldAccent
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.SurfaceDark
 import com.example.ui.theme.SurfaceElevatedDark
@@ -123,8 +121,15 @@ fun SettingsScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    var showSetPinDialog by remember { mutableStateOf(false) }
+
+    // Intercept back button: if PIN dialog open, dismiss it first; otherwise invoke onBack()
     BackHandler {
-        onBack()
+        if (showSetPinDialog) {
+            showSetPinDialog = false
+        } else {
+            onBack()
+        }
     }
 
     var stats by remember { mutableStateOf<VaultStats?>(null) }
@@ -135,12 +140,14 @@ fun SettingsScreen(
 
     val isServiceConnected by NotificationVaultService.isServiceConnected.collectAsState()
     val lastReceivedEvent by NotificationVaultService.lastReceivedEvent.collectAsState()
+    val lastSavedMessage by NotificationVaultService.lastSavedMessage.collectAsState()
+    val lastError by NotificationVaultService.lastError.collectAsState()
+
     val modelDownloadState by translationManager.modelDownloadState.collectAsState()
     val isArabicModelDownloaded by translationManager.isArabicModelDownloaded.collectAsState()
     val isEnglishModelDownloaded by translationManager.isEnglishModelDownloaded.collectAsState()
 
     var isLockEnabled by remember { mutableStateOf(securityManager.isLockEnabled()) }
-    var showSetPinDialog by remember { mutableStateOf(false) }
     var pinValue by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
 
@@ -214,7 +221,7 @@ fun SettingsScreen(
                     }
                 },
                 title = {
-                    Text("الإعدادات والتشخيص", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("الإعدادات وحالة الخدمة", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
             )
         }
@@ -228,8 +235,8 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // Section 1: System & Capture Diagnostics
-            SettingsSectionHeader(title = "حالة النظام والتشخيص")
+            // Section 1: Detailed Service Status & Diagnostics
+            SettingsSectionHeader(title = "حالة الخدمة والتشخيص الدقيق")
 
             Card(
                 modifier = Modifier
@@ -239,11 +246,11 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    // Notification Access Status
+                    // 1. Notification Access Permission
                     val accessGranted = preferenceManager.isNotificationAccessGranted()
                     DiagnosticRow(
-                        label = "صلاحية الوصول للإشعارات",
-                        statusText = if (accessGranted) "مفعلة وتعمل بنجاح" else "معطلة!",
+                        label = "صلاحية الوصول للإشعارات (Permission)",
+                        statusText = if (accessGranted) "ممنوحة ومفعلة بالنظام ✓" else "معطلة! يلزم تفعيلها",
                         isSuccess = accessGranted,
                         onActionClick = {
                             context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -253,67 +260,105 @@ fun SettingsScreen(
 
                     HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 10.dp))
 
-                    // Service connection
+                    // 2. Real Connection Status (Do not claim active merely because permission is granted)
+                    val isRealActive = accessGranted && isServiceConnected
+                    val statusLabel = when {
+                        !accessGranted -> "معطلة (الصلاحية غير مفعلة)"
+                        isServiceConnected -> "نشطة وتستقبل في الخلفية الآن ✓"
+                        else -> "الصلاحية ممنوحة - بانتظار ربط النظام (انقر لإعادة الربط)"
+                    }
+
                     DiagnosticRow(
-                        label = "حالة اتصال خدمة المراقبة",
-                        statusText = if (isServiceConnected || accessGranted) "الخدمة نشطة وتستقبل في الخلفية" else "بانتظار وصول إشعارات",
-                        isSuccess = isServiceConnected || accessGranted
+                        label = "حالة اتصال الخدمة الفعلية (Listener)",
+                        statusText = statusLabel,
+                        isSuccess = isRealActive,
+                        onActionClick = if (accessGranted && !isServiceConnected) {
+                            { NotificationVaultService.tryRebind(context) }
+                        } else null,
+                        actionText = if (accessGranted && !isServiceConnected) "إعادة الربط" else null
                     )
 
                     HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 10.dp))
 
-                    // Dual / Cloned WhatsApp detection
-                    DiagnosticRow(
-                        label = "دعم واتساب المستنسخ (App Twin)",
-                        statusText = "مدعوم عبر UserHandle وفصل المعرفات",
-                        isSuccess = true
-                    )
+                    // 3. Last received notification
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("آخر إشعار مستلم عبر النظام:", color = TextPrimaryDark, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        if (lastReceivedEvent != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(SurfaceElevatedDark)
+                                    .padding(8.dp)
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "${lastReceivedEvent?.chatTitle} (${lastReceivedEvent?.appDisplayName})",
+                                        color = NeonGreen,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = lastReceivedEvent?.messageSnippet ?: "",
+                                        color = TextSecondaryDark,
+                                        fontSize = 12.sp,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = formatTime(lastReceivedEvent?.timestamp ?: 0L),
+                                        color = TextMutedDark,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            Text("لم يصل أي إشعار جديد في الجلسة الحالية", color = TextMutedDark, fontSize = 11.sp)
+                        }
+                    }
 
                     HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 10.dp))
 
-                    // Total counts
+                    // 4. Last saved message in Database
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("آخر رسالة محفوظة بقاعدة البيانات:", color = TextPrimaryDark, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val lastSaved = lastSavedMessage ?: stats?.lastMessage?.let { "${it.senderName}: ${it.messageText.take(35)}" }
+                        if (!lastSaved.isNullOrBlank()) {
+                            Text(lastSaved, color = CyanAccent, fontSize = 12.sp)
+                        } else {
+                            Text("لا توجد رسائل مسجلة بعد", color = TextMutedDark, fontSize = 11.sp)
+                        }
+                    }
+
+                    // 5. Saving Error Logs
+                    if (!lastError.isNullOrBlank()) {
+                        HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(lastError ?: "", color = DangerRed, fontSize = 11.sp)
+                        }
+                    }
+
+                    HorizontalDivider(color = BorderDark, modifier = Modifier.padding(vertical = 10.dp))
+
+                    // Counters
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text("إجمالي المحادثات", color = TextMutedDark, fontSize = 11.sp)
+                            Text("المحادثات", color = TextMutedDark, fontSize = 11.sp)
                             Text("${stats?.conversationsCount ?: 0}", color = TextPrimaryDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                         Column {
-                            Text("إجمالي الرسائل", color = TextMutedDark, fontSize = 11.sp)
+                            Text("الرسائل الكلية", color = TextMutedDark, fontSize = 11.sp)
                             Text("${stats?.messagesCount ?: 0}", color = TextPrimaryDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                         Column {
                             Text("الرسائل المحذوفة", color = TextMutedDark, fontSize = 11.sp)
                             Text("${stats?.deletedMessagesCount ?: 0}", color = DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    // Last received snippet
-                    if (lastReceivedEvent != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(SurfaceElevatedDark)
-                                .padding(10.dp)
-                        ) {
-                            Column {
-                                Text(
-                                    text = "آخر رسالة تم التقاطها:",
-                                    color = NeonGreen,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${lastReceivedEvent?.chatTitle} (${lastReceivedEvent?.appDisplayName}): ${lastReceivedEvent?.messageSnippet}",
-                                    color = TextPrimaryDark,
-                                    fontSize = 12.sp,
-                                    maxLines = 1
-                                )
-                            }
                         }
                     }
                 }
@@ -326,7 +371,6 @@ fun SettingsScreen(
                     .clickable {
                         coroutineScope.launch {
                             val time = System.currentTimeMillis()
-                            // Save a live message into DB
                             repository.saveIncomingNotification(
                                 packageName = "com.whatsapp",
                                 appDisplayName = "واتساب",
@@ -338,7 +382,7 @@ fun SettingsScreen(
                                 userHandleId = 0
                             )
                             stats = repository.getStats()
-                            Toast.makeText(context, "تم استقبال وتوثيق الرسالة التجريبية بنجاح!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "تم استقبال وتوثيق الرسالة بنجاح!", Toast.LENGTH_SHORT).show()
                         }
                     },
                 colors = CardDefaults.cardColors(containerColor = DarkEmerald),
@@ -437,7 +481,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "عند تنزيل الحزم، تعمل الترجمة الفورية بالكامل على الجهاز المشفر دون الحاجة للاتصال بالإنترنت.",
+                        text = "عند تنزيل الحزم، تعمل الترجمة الفورية بالكامل على الجهاز دون إرسال البيانات لأي خوادم خارجية.",
                         color = TextSecondaryDark,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -513,7 +557,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "يتم حفظ المحادثات بقاعدة بيانات Room مشفرة داخل مجلد التطبيق الخاص. يمكنك تصدير نسخة احتياطية بصيغة JSON عبر منتقي ملفات النظام لاستعادتها لاحقًا.",
+                        text = "البيانات محفوظة في Room Database محلية داخل التخزين الخاص بالتطبيق. يمكنك تصدير أو استعادة النسخ بصيغة JSON بأمان.",
                         color = TextSecondaryDark,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -595,7 +639,7 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 

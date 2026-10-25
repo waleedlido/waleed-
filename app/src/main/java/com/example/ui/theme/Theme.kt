@@ -1,42 +1,49 @@
 package com.example.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalContext
 
-private val MessageVaultColorScheme = darkColorScheme(
-    primary = NeonGreen,
-    onPrimary = Color.Black,
-    primaryContainer = DarkEmerald,
-    onPrimaryContainer = BrightNeonGreen,
-    secondary = CyanAccent,
-    onSecondary = Color.Black,
-    secondaryContainer = Color(0xFF00363A),
-    onSecondaryContainer = Color(0xFF80DEEA),
-    tertiary = GoldAccent,
-    onTertiary = Color.Black,
-    background = DeepObsidian,
-    onBackground = TextPrimaryDark,
-    surface = SurfaceDark,
-    onSurface = TextPrimaryDark,
-    surfaceVariant = SurfaceVariantDark,
-    onSurfaceVariant = TextSecondaryDark,
-    outline = BorderDark,
-    outlineVariant = BorderHighlight,
-    error = DangerRed,
-    onError = Color.White,
-    errorContainer = DangerRedContainer,
-    onErrorContainer = Color(0xFFFFB4AB)
-)
+val LocalCustomColors = staticCompositionLocalOf {
+    ThemeColorFactory.createCustomColors(ColorPalette.EMERALD, isDark = true)
+}
+
+object VaultTheme {
+    val colors: CustomThemeColors
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalCustomColors.current
+}
 
 @Composable
 fun MessageVaultTheme(
+    themeConfig: ThemeConfig? = null,
     content: @Composable () -> Unit
 ) {
-    MaterialTheme(
-        colorScheme = MessageVaultColorScheme,
-        typography = Typography,
-        content = content
-    )
+    val context = LocalContext.current
+    val systemInDark = isSystemInDarkTheme()
+
+    val effectiveConfig = themeConfig ?: ThemeConfig()
+    val isDark = when (effectiveConfig.mode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> systemInDark
+    }
+
+    val colorScheme = ThemeColorFactory.createColorScheme(effectiveConfig.palette, isDark)
+    val customColors = ThemeColorFactory.createCustomColors(effectiveConfig.palette, isDark)
+
+    CompositionLocalProvider(
+        LocalCustomColors provides customColors
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

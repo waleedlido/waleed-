@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -39,6 +37,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -65,14 +65,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -80,38 +84,36 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.model.ConversationEntity
 import com.example.data.model.MessageEntity
 import com.example.data.repository.MessageVaultRepository
 import com.example.ml.TranslationManager
 import com.example.ml.TranslationResult
 import com.example.ui.components.AppAvatarIcon
-import com.example.ui.components.AppSourceBadge
 import com.example.ui.components.AppSourceIcon
-import com.example.ui.theme.BorderDark
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.DangerRedContainer
 import com.example.ui.theme.DarkEmerald
-import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.NeonGreen
-import com.example.ui.theme.SurfaceDark
+import com.example.ui.theme.VaultTheme
 import com.example.util.AppIconProvider
+import com.example.util.ChatWallpaperManager
 import com.example.util.DateTimeUtils
-import com.example.ui.theme.SurfaceElevatedDark
-import com.example.ui.theme.TextMutedDark
-import com.example.ui.theme.TextPrimaryDark
-import com.example.ui.theme.TextSecondaryDark
+import com.example.util.PresetWallpapers
+import com.example.util.PrivacyBlurManager
+import com.example.util.WallpaperConfig
+import com.example.util.WallpaperScale
+import com.example.util.WallpaperType
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.io.File
 
 /**
  * Global cache to preserve scroll position for each conversation across back/forward navigation.
  */
 object ChatScrollStateCache {
-    private val scrollPositions = mutableMapOf<Long, Pair<Int, Int>>() // conversationId -> (index, offset)
+    private val scrollPositions = mutableMapOf<Long, Pair<Int, Int>>()
 
     fun getPosition(conversationId: Long): Pair<Int, Int>? = scrollPositions[conversationId]
 
@@ -128,11 +130,6 @@ object ChatScrollStateCache {
     }
 }
 
-/**
- * Fast and smooth scrolling helper:
- * For long distances (>10 items), jumps close to the target instantly
- * then animates the short remaining distance to eliminate frame lag and scrolling freezes.
- */
 suspend fun LazyListState.fastScrollTo(targetIndex: Int) {
     val total = layoutInfo.totalItemsCount
     if (total <= 0) return
@@ -160,17 +157,21 @@ fun ChatDetailScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    val themeColors = VaultTheme.colors
 
-    var showMenu by remember { mutableStateOf(false) }
+    val wallpaperManager = remember { ChatWallpaperManager.get(context) }
+    val wallpaperConfig by wallpaperManager.getConversationWallpaperFlow(conversationId)
+        .collectAsState(initial = WallpaperConfig())
 
-    // Intercept back button: if menu is open close it first, otherwise onBack() returns to Home
+    val privacyManager = remember { PrivacyBlurManager.get(context) }
+    val privacyConfig by privacyManager.stateFlow.collectAsState()
+
+    // Temporary reveal state: automatically reblurs on exit
+    val revealedMessageIds = remember { mutableStateListOf<Long>() }
+
     BackHandler {
-        if (showMenu) {
-            showMenu = false
-        } else {
-            onBack()
-        }
+        revealedMessageIds.clear()
+        onBack()
     }
 
     var conversation by remember { mutableStateOf<ConversationEntity?>(null) }
@@ -178,134 +179,119 @@ fun ChatDetailScreen(
         conversation = repository.getConversationById(conversationId)
     }
 
-    val messages by repository.getMessagesForConversation(conversationId)
-        .collectAsState(initial = emptyList())
+    val messages by repository.getMessagesForConversation(conversationId).collectAsState(initial = emptyList())
 
-    // Track scroll restoration: restore saved position if exists, otherwise open at latest message
-    var hasRestoredScroll by remember(conversationId) { mutableStateOf(false) }
+    val cachedPosition = remember(conversationId) { ChatScrollStateCache.getPosition(conversationId) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = cachedPosition?.first ?: 0,
+        initialFirstVisibleItemScrollOffset = cachedPosition?.second ?: 0
+    )
 
-    LaunchedEffect(messages.isNotEmpty(), conversationId) {
-        if (messages.isNotEmpty() && !hasRestoredScroll) {
-            val saved = ChatScrollStateCache.getPosition(conversationId)
-            if (saved != null) {
-                val (savedIndex, savedOffset) = saved
-                val safeIndex = savedIndex.coerceIn(0, messages.size - 1)
-                listState.scrollToItem(safeIndex, savedOffset)
-            } else {
-                // Open directly at the newest message (bottom)
-                listState.scrollToItem(messages.size - 1)
-            }
-            hasRestoredScroll = true
-        }
-    }
-
-    // Preserve scroll position when leaving this conversation screen
     DisposableEffect(conversationId) {
         onDispose {
-            if (messages.isNotEmpty()) {
-                ChatScrollStateCache.savePosition(
-                    conversationId,
-                    listState.firstVisibleItemIndex,
-                    listState.firstVisibleItemScrollOffset
-                )
-            }
+            ChatScrollStateCache.savePosition(
+                conversationId,
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset
+            )
         }
     }
 
-    // Determine visibility of floating navigation arrows in real-time
-    val showScrollToTop by remember {
-        derivedStateOf { listState.canScrollBackward }
+    val isScrolledToBottom by remember {
+        derivedStateOf {
+            val total = listState.layoutInfo.totalItemsCount
+            if (total == 0) return@derivedStateOf true
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= total - 2
+        }
     }
 
-    val showScrollToBottom by remember {
-        derivedStateOf { listState.canScrollForward }
-    }
-
-    // Handle new incoming messages: if user is scrolled up reading old messages,
-    // do NOT force scroll down. Show a floating badge instead.
-    var previousMessageCount by remember(conversationId) { mutableStateOf(messages.size) }
-    var hasNewMessagePill by remember(conversationId) { mutableStateOf(false) }
+    var lastSeenMessageCount by remember { mutableStateOf(0) }
+    var hasNewMessagePill by remember { mutableStateOf(false) }
 
     LaunchedEffect(messages.size) {
-        if (previousMessageCount > 0 && messages.size > previousMessageCount) {
-            if (listState.canScrollForward) {
-                // User is scrolled back reading past history: alert them gently
-                hasNewMessagePill = true
-            } else {
-                // User is already at the bottom: follow stream smoothly
+        if (lastSeenMessageCount == 0) {
+            if (cachedPosition == null && messages.isNotEmpty()) {
                 listState.fastScrollTo(messages.size - 1)
             }
+            lastSeenMessageCount = messages.size
+        } else if (messages.size > lastSeenMessageCount) {
+            if (isScrolledToBottom) {
+                listState.fastScrollTo(messages.size - 1)
+            } else {
+                hasNewMessagePill = true
+            }
+            lastSeenMessageCount = messages.size
         }
-        previousMessageCount = messages.size
     }
 
-    // Dismiss "New Messages" pill if the user scrolls down to the bottom
-    LaunchedEffect(listState.canScrollForward) {
-        if (!listState.canScrollForward) {
-            hasNewMessagePill = false
+    val showScrollToTop by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 3 }
+    }
+    val showScrollToBottom by remember {
+        derivedStateOf {
+            val total = listState.layoutInfo.totalItemsCount
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            total > 6 && lastVisible < total - 3
         }
     }
 
+    var showMenu by remember { mutableStateOf(false) }
     var isTranslatingAll by remember { mutableStateOf(false) }
     var selectedMessageForDetails by remember { mutableStateOf<MessageEntity?>(null) }
 
     Scaffold(
-        containerColor = DeepObsidian,
+        containerColor = themeColors.background,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SurfaceDark,
-                    titleContentColor = TextPrimaryDark
+                    containerColor = themeColors.surface,
+                    titleContentColor = themeColors.textPrimary
                 ),
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("chat_back_button")) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "رجوع",
-                            tint = TextPrimaryDark
+                            tint = themeColors.textPrimary
                         )
                     }
                 },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 1. Single Application Icon Avatar in Chat Header (38-42dp)
                         conversation?.let { conv ->
                             AppAvatarIcon(
                                 packageName = conv.packageName,
-                                chatTitle = conv.chatTitle,
                                 isClonedApp = conv.isClonedApp,
-                                modifier = Modifier.size(38.dp)
+                                size = 38.dp
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                         }
+
                         Column {
+                            val isSenderBlurred = privacyConfig.isMasterBlurEnabled && privacyConfig.blurSenderNames
+                            val displayTitle = if (isSenderBlurred) "••••••••" else (conversation?.chatTitle ?: "المحادثة")
+
+                            Text(
+                                text = displayTitle,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = themeColors.textPrimary,
+                                maxLines = 1
+                            )
+
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                conversation?.let { conv ->
-                                    AppSourceIcon(
-                                        packageName = conv.packageName,
-                                        isClonedApp = conv.isClonedApp,
-                                        size = 18.dp,
-                                        modifier = Modifier.padding(end = 6.dp)
-                                    )
-                                }
                                 Text(
-                                    text = conversation?.chatTitle ?: "المحادثة",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimaryDark,
-                                    maxLines = 1
+                                    text = "${messages.size} رسالة",
+                                    fontSize = 11.sp,
+                                    color = themeColors.textMuted
                                 )
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 conversation?.let { conv ->
-                                    AppSourceBadge(
-                                        packageName = conv.packageName,
-                                        isClonedApp = conv.isClonedApp
-                                    )
                                     if (conv.deletedMessagesCount > 0) {
-                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "• ${conv.deletedMessagesCount} محذوفة",
-                                            fontSize = 10.sp,
+                                            text = " • ${conv.deletedMessagesCount} محذوفة",
+                                            fontSize = 11.sp,
                                             color = DangerRed,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -317,16 +303,20 @@ fun ChatDetailScreen(
                 },
                 actions = {
                     IconButton(onClick = { showMenu = true }) {
-                        Icon(imageVector = Icons.Default.MoreVert, contentDescription = "خيارات", tint = TextSecondaryDark)
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "خيارات",
+                            tint = themeColors.textSecondary
+                        )
                     }
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
-                        modifier = Modifier.background(SurfaceDark)
+                        modifier = Modifier.background(themeColors.surface)
                     ) {
                         DropdownMenuItem(
-                            text = { Text("ترجمة جميع الرسائل الظاهرة", color = TextPrimaryDark) },
-                            leadingIcon = { Icon(Icons.Default.Translate, contentDescription = null, tint = NeonGreen) },
+                            text = { Text("ترجمة جميع الرسائل الظاهرة", color = themeColors.textPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Translate, contentDescription = null, tint = themeColors.primary) },
                             onClick = {
                                 showMenu = false
                                 isTranslatingAll = true
@@ -345,7 +335,7 @@ fun ChatDetailScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("حذف المحادثة", color = DangerRed) },
+                            text = { Text("حذف المحادثة إلى السلة", color = DangerRed) },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = DangerRed) },
                             onClick = {
                                 showMenu = false
@@ -365,7 +355,58 @@ fun ChatDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // LazyColumn ordered chronologically (oldest at top index 0, newest at bottom index lastIndex)
+            // Layer 1: Chat Wallpaper with dimming and optional blur
+            when (wallpaperConfig.type) {
+                WallpaperType.CUSTOM_PHOTO -> {
+                    wallpaperConfig.customImagePath?.let { path ->
+                        val file = File(path)
+                        if (file.exists()) {
+                            val scale = when (wallpaperConfig.scaleMode) {
+                                WallpaperScale.FILL_CROP -> ContentScale.Crop
+                                WallpaperScale.FIT -> ContentScale.Fit
+                                WallpaperScale.CENTER -> ContentScale.Inside
+                            }
+                            AsyncImage(
+                                model = file,
+                                contentDescription = null,
+                                contentScale = scale,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(if (wallpaperConfig.isBlurEnabled) Modifier.blur(16.dp) else Modifier)
+                            )
+                            // Dimming layer (Default 40%, range 0-80%)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = wallpaperConfig.dimmingOpacity))
+                            )
+                        }
+                    }
+                }
+
+                WallpaperType.PRESET -> {
+                    val preset = PresetWallpapers.find(wallpaperConfig.presetId) ?: PresetWallpapers.list.first()
+                    val colors = preset.previewGradientColors.map { Color(it) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Brush.verticalGradient(colors))
+                            .then(if (wallpaperConfig.isBlurEnabled) Modifier.blur(16.dp) else Modifier)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = wallpaperConfig.dimmingOpacity))
+                    )
+                }
+
+                WallpaperType.DEFAULT -> {
+                    // Default clean background
+                    Box(modifier = Modifier.fillMaxSize().background(themeColors.background))
+                }
+            }
+
+            // Layer 2: Messages List
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -388,10 +429,19 @@ fun ChatDetailScreen(
                             )
                         }
 
+                        val isBlurActive = privacyConfig.isMasterBlurEnabled && privacyConfig.blurChatMessages
+                        val isMessageRevealed = revealedMessageIds.contains(message.id)
+
                         MessageBubble(
                             message = message,
-                            packageName = conversation?.packageName ?: "",
-                            isClonedApp = conversation?.isClonedApp ?: false,
+                            isBlurred = isBlurActive && !isMessageRevealed,
+                            onToggleReveal = {
+                                if (revealedMessageIds.contains(message.id)) {
+                                    revealedMessageIds.remove(message.id)
+                                } else {
+                                    revealedMessageIds.add(message.id)
+                                }
+                            },
                             onBubbleClick = { selectedMessageForDetails = message },
                             onTranslateClick = {
                                 coroutineScope.launch {
@@ -411,7 +461,7 @@ fun ChatDetailScreen(
                 }
             }
 
-            // Floating Navigation Arrows (Top & Bottom)
+            // Floating Navigation Arrows (Scroll Up & Scroll Down)
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -432,22 +482,22 @@ fun ChatDetailScreen(
                             }
                         },
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(46.dp)
                             .testTag("scroll_to_top_button"),
                         shape = CircleShape,
-                        containerColor = SurfaceElevatedDark,
-                        contentColor = NeonGreen,
+                        containerColor = themeColors.surfaceElevated,
+                        contentColor = themeColors.primary,
                         elevation = FloatingActionButtonDefaults.elevation(6.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowUpward,
-                            contentDescription = "الانتقال لأول رسالة قديمة",
-                            modifier = Modifier.size(24.dp)
+                            contentDescription = "الانتقال لأول رسالة",
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
 
-                // Arrow DOWN: Scroll to newest message (index lastIndex)
+                // Arrow DOWN: Scroll to newest message
                 AnimatedVisibility(
                     visible = showScrollToBottom,
                     enter = fadeIn(),
@@ -462,23 +512,23 @@ fun ChatDetailScreen(
                             }
                         },
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(46.dp)
                             .testTag("scroll_to_bottom_button"),
                         shape = CircleShape,
-                        containerColor = DarkEmerald,
-                        contentColor = NeonGreen,
+                        containerColor = themeColors.primaryContainer,
+                        contentColor = themeColors.primary,
                         elevation = FloatingActionButtonDefaults.elevation(6.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowDownward,
-                            contentDescription = "الانتقال لآخر رسالة حديثة",
-                            modifier = Modifier.size(24.dp)
+                            contentDescription = "الانتقال لآخر رسالة",
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
 
-            // New Message Floating Pill Banner (shown when user is browsing older messages and new ones arrive)
+            // New Message Floating Pill Banner
             AnimatedVisibility(
                 visible = hasNewMessagePill,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -497,11 +547,8 @@ fun ChatDetailScreen(
                         }
                     },
                     shape = RoundedCornerShape(24.dp),
-                    color = DarkEmerald,
-                    tonalElevation = 8.dp,
-                    shadowElevation = 8.dp,
-                    border = BorderStroke(1.dp, NeonGreen),
-                    modifier = Modifier.testTag("new_message_badge")
+                    color = themeColors.primaryContainer,
+                    shadowElevation = 6.dp
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -510,13 +557,13 @@ fun ChatDetailScreen(
                         Icon(
                             imageVector = Icons.Default.ArrowDownward,
                             contentDescription = null,
-                            tint = NeonGreen,
+                            tint = themeColors.primary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "رسائل جديدة بالأسفل",
-                            color = Color.White,
+                            text = "رسائل جديدة في الأسفل ↓",
+                            color = themeColors.primary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -532,16 +579,16 @@ fun ChatDetailScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                        colors = CardDefaults.cardColors(containerColor = themeColors.surface),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(20.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            CircularProgressIndicator(color = NeonGreen, modifier = Modifier.size(24.dp))
+                            CircularProgressIndicator(color = themeColors.primary, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(14.dp))
-                            Text("جاري ترجمة الرسائل بالذكاء الاصطناعي...", color = TextPrimaryDark, fontSize = 13.sp)
+                            Text("جاري ترجمة الرسائل بالذكاء الاصطناعي...", color = themeColors.textPrimary, fontSize = 13.sp)
                         }
                     }
                 }
@@ -565,6 +612,7 @@ fun DateSeparatorHeader(
     label: String,
     modifier: Modifier = Modifier
 ) {
+    val themeColors = VaultTheme.colors
     Box(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center
@@ -572,13 +620,13 @@ fun DateSeparatorHeader(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
-                .background(SurfaceElevatedDark)
-                .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
+                .background(themeColors.surfaceElevated)
+                .border(1.dp, themeColors.border, RoundedCornerShape(12.dp))
                 .padding(horizontal = 14.dp, vertical = 5.dp)
         ) {
             Text(
                 text = label,
-                color = TextSecondaryDark,
+                color = themeColors.textSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -586,17 +634,25 @@ fun DateSeparatorHeader(
     }
 }
 
+/**
+ * Modern Clean Message Bubble:
+ * - NO app logo inside bubble.
+ * - Organized layout with natural text wrapping.
+ * - Privacy blur support with Eye reveal button.
+ * - Compact action buttons (translate, copy, details).
+ * - Arabic Date & Time below the bubble.
+ */
 @Composable
 fun MessageBubble(
     message: MessageEntity,
-    packageName: String,
-    isClonedApp: Boolean,
+    isBlurred: Boolean,
+    onToggleReveal: () -> Unit,
     onBubbleClick: () -> Unit,
     onTranslateClick: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
-    var isTranslatingLocal by remember { mutableStateOf(false) }
+    val themeColors = VaultTheme.colors
 
     Column(
         modifier = Modifier
@@ -609,102 +665,115 @@ fun MessageBubble(
                 .fillMaxWidth(0.92f)
                 .border(
                     width = 1.dp,
-                    color = if (message.isDeletedBySender) DangerRed.copy(alpha = 0.6f) else BorderDark,
+                    color = if (message.isDeletedBySender) themeColors.deletedBubbleBorder else themeColors.incomingBubbleBorder,
                     shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
                 )
                 .clickable { onBubbleClick() },
             colors = CardDefaults.cardColors(
-                containerColor = if (message.isDeletedBySender) Color(0xFF180B0D) else SurfaceDark
+                containerColor = if (message.isDeletedBySender) themeColors.deletedBubble else themeColors.incomingBubble
             ),
             shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
 
-                // Sender Name, App Icon, Badge & Full Timestamp
+                // Top row: Sender Name and Deletion alert tag if deleted
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f, fill = false)
-                    ) {
-                        AppSourceIcon(
-                            packageName = packageName,
-                            isClonedApp = message.isFromClonedApp || isClonedApp,
-                            size = 20.dp,
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
-                        Text(
-                            text = message.senderName,
-                            color = if (message.isDeletedBySender) DangerRed else NeonGreen,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        AppSourceBadge(
-                            packageName = packageName,
-                            isClonedApp = message.isFromClonedApp || isClonedApp,
-                            iconSize = 14.dp
-                        )
-                    }
-
                     Text(
-                        text = DateTimeUtils.formatShortTime(message.timestamp),
-                        color = TextMutedDark,
-                        fontSize = 10.sp
+                        text = message.senderName,
+                        color = if (message.isDeletedBySender) DangerRed else themeColors.primary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
                     )
-                }
 
-                // Deleted by Sender Alert Banner
-                if (message.isDeletedBySender) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(DangerRedContainer)
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = DangerRed,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                    if (message.isDeletedBySender) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(DangerRedContainer)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
                             Text(
-                                text = "قام الطرف الآخر بحذف هذه الرسالة • النص الأصلي محفوظ ومحمي 🔒",
+                                text = "محذوفة من الطرف الآخر 🔒",
                                 color = DangerRed,
-                                fontSize = 11.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Original Message Text (Complete text, never overwritten)
-                Text(
-                    text = message.messageText,
-                    color = TextPrimaryDark,
-                    fontSize = 14.sp,
-                    lineHeight = 22.sp
-                )
+                // Message Text with Privacy Blurring support
+                if (isBlurred) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "••••••••••••••••••••••••••••••",
+                            color = themeColors.textMuted,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = onToggleReveal,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = "إظهار الرسالة مؤقتاً",
+                                tint = themeColors.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = message.messageText,
+                            color = themeColors.textPrimary,
+                            fontSize = 14.sp,
+                            lineHeight = 21.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // If user revealed message manually, provide hide button
+                        IconButton(
+                            onClick = onToggleReveal,
+                            modifier = Modifier.size(24.dp).padding(start = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VisibilityOff,
+                                contentDescription = "تمويه الرسالة",
+                                tint = themeColors.textMuted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
 
                 // Translated Text Block if exists
                 if (!message.translatedText.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(DarkEmerald.copy(alpha = 0.6f))
-                            .border(1.dp, NeonGreen.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                            .padding(10.dp)
+                            .background(themeColors.primaryContainer.copy(alpha = 0.4f))
+                            .border(1.dp, themeColors.primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
                     ) {
                         Column {
                             Row(
@@ -714,17 +783,18 @@ fun MessageBubble(
                             ) {
                                 Text(
                                     text = if (message.translationLanguage == "ar") "الترجمة إلى العربية:" else "Translation to English:",
-                                    color = NeonGreen,
+                                    color = themeColors.primary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "نسخ الترجمة",
-                                    color = CyanAccent,
-                                    fontSize = 11.sp,
+                                    text = "نسخ",
+                                    color = themeColors.secondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(4.dp))
-                                        .background(SurfaceElevatedDark)
+                                        .background(themeColors.surfaceElevated)
                                         .clickable {
                                             clipboardManager.setText(AnnotatedString(message.translatedText ?: ""))
                                             Toast.makeText(context, "تم نسخ الترجمة", Toast.LENGTH_SHORT).show()
@@ -735,7 +805,7 @@ fun MessageBubble(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = message.translatedText,
-                                color = Color.White,
+                                color = themeColors.textPrimary,
                                 fontSize = 13.sp,
                                 lineHeight = 19.sp
                             )
@@ -743,87 +813,92 @@ fun MessageBubble(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Bottom Actions Row (Translate button & Copy button & Details prompt)
+                // Compact, tidy action buttons row (Details, Translate, Copy)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Clickable hint for details
+                    // Left (RTL right): Details button
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(6.dp))
                             .clickable { onBubbleClick() }
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = "تفاصيل الرسالة",
-                            tint = CyanAccent,
+                            tint = themeColors.secondary,
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "تفاصيل الرسالة",
-                            color = CyanAccent,
+                            text = "تفاصيل",
+                            color = themeColors.secondary,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Right (RTL left): Translate and Copy buttons
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         // Translate Button
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(SurfaceElevatedDark)
-                                .clickable {
-                                    if (!isTranslatingLocal) {
-                                        isTranslatingLocal = true
-                                        onTranslateClick()
-                                        isTranslatingLocal = false
-                                    }
-                                }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(themeColors.surfaceElevated)
+                                .clickable { onTranslateClick() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Translate,
                                     contentDescription = "ترجمة",
-                                    tint = NeonGreen,
-                                    modifier = Modifier.size(14.dp)
+                                    tint = themeColors.primary,
+                                    modifier = Modifier.size(13.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = if (message.translatedText == null) "ترجمة" else "إعادة الترجمة",
-                                    color = NeonGreen,
-                                    fontSize = 11.sp,
+                                    text = if (message.translatedText == null) "ترجمة" else "إعادة ترجمة",
+                                    color = themeColors.primary,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
                         // Copy Button
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(SurfaceElevatedDark)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(themeColors.surfaceElevated)
                                 .clickable {
                                     clipboardManager.setText(AnnotatedString(message.messageText))
-                                    Toast.makeText(context, "تم نسخ النص الأصلي", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "تم نسخ النص", Toast.LENGTH_SHORT).show()
                                 }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text(
-                                text = "نسخ",
-                                color = TextSecondaryDark,
-                                fontSize = 11.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "نسخ",
+                                    tint = themeColors.textSecondary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "نسخ",
+                                    color = themeColors.textSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -840,7 +915,7 @@ fun MessageBubble(
         ) {
             Text(
                 text = DateTimeUtils.formatMessageBubbleTime(message.timestamp),
-                color = TextMutedDark,
+                color = themeColors.textMuted,
                 fontSize = 10.sp
             )
             if (message.isDeletedBySender && message.deletedDetectedAt != null) {
@@ -864,13 +939,14 @@ fun MessageDetailsDialog(
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val themeColors = VaultTheme.colors
     val appLabel = remember(packageName, isClonedApp) {
         AppIconProvider.getAppLabel(context, packageName, isClonedApp)
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = SurfaceDark,
+        containerColor = themeColors.surface,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppSourceIcon(
@@ -881,7 +957,7 @@ fun MessageDetailsDialog(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "تفاصيل الرسالة وتوثيقها",
-                    color = TextPrimaryDark,
+                    color = themeColors.textPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -902,7 +978,7 @@ fun MessageDetailsDialog(
                 DetailItem(
                     label = "حالة الاستنساخ (App Twin):",
                     value = if (message.isFromClonedApp || isClonedApp) "تطبيق مستنسخ (HONOR App Twin / Multi-App)" else "تطبيق أصلي أساسي",
-                    valueColor = if (message.isFromClonedApp || isClonedApp) CyanAccent else TextSecondaryDark
+                    valueColor = if (message.isFromClonedApp || isClonedApp) CyanAccent else themeColors.textSecondary
                 )
 
                 DetailItem(
@@ -935,7 +1011,7 @@ fun MessageDetailsDialog(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "توقيت رصد الحذف: ${DateTimeUtils.formatFullDetailedDateTime(message.deletedDetectedAt)}",
-                                    color = TextPrimaryDark,
+                                    color = themeColors.textPrimary,
                                     fontSize = 11.sp
                                 )
                             }
@@ -945,24 +1021,24 @@ fun MessageDetailsDialog(
                     DetailItem(
                         label = "حالة الحذف:",
                         value = "رسالة أصلية محفوظة (لم يتم حذفها)",
-                        valueColor = NeonGreen
+                        valueColor = themeColors.primary
                     )
                 }
 
                 Column {
-                    Text("النص الأصلي المحفوظ:", color = TextMutedDark, fontSize = 11.sp)
+                    Text("النص الأصلي المحفوظ:", color = themeColors.textMuted, fontSize = 11.sp)
                     Spacer(modifier = Modifier.height(4.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceElevatedDark)
-                            .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
+                            .background(themeColors.surfaceElevated)
+                            .border(1.dp, themeColors.border, RoundedCornerShape(8.dp))
                             .padding(10.dp)
                     ) {
                         Text(
                             text = message.messageText,
-                            color = TextPrimaryDark,
+                            color = themeColors.textPrimary,
                             fontSize = 13.sp
                         )
                     }
@@ -992,7 +1068,7 @@ fun MessageDetailsDialog(
                     clipboardManager.setText(AnnotatedString(detailsReport))
                     Toast.makeText(context, "تم نسخ تقرير الرسالة بالكامل", Toast.LENGTH_SHORT).show()
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = DarkEmerald, contentColor = NeonGreen)
+                colors = ButtonDefaults.buttonColors(containerColor = themeColors.primaryContainer, contentColor = themeColors.primary)
             ) {
                 Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
@@ -1001,7 +1077,7 @@ fun MessageDetailsDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("إغلاق", color = TextSecondaryDark)
+                Text("إغلاق", color = themeColors.textSecondary)
             }
         }
     )
@@ -1011,14 +1087,11 @@ fun MessageDetailsDialog(
 private fun DetailItem(
     label: String,
     value: String,
-    valueColor: Color = TextPrimaryDark
+    valueColor: Color = VaultTheme.colors.textPrimary
 ) {
+    val themeColors = VaultTheme.colors
     Column {
-        Text(text = label, color = TextMutedDark, fontSize = 11.sp)
+        Text(text = label, color = themeColors.textMuted, fontSize = 11.sp)
         Text(text = value, color = valueColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
-}
-
-fun formatDetailedDate(timestamp: Long): String {
-    return DateTimeUtils.formatMessageBubbleTime(timestamp)
 }

@@ -161,20 +161,22 @@ fun HomeScreen(
     val trashCount by repository.trashCount.collectAsState(initial = 0)
     val totalDeleted = conversations.sumOf { it.deletedMessagesCount }
 
+    val themeColors = com.example.ui.theme.VaultTheme.colors
+
     Scaffold(
-        containerColor = DeepObsidian,
+        containerColor = themeColors.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (isSelectionMode) {
                 // Contextual Multi-Selection Top Bar
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = SurfaceElevatedDark,
-                        titleContentColor = TextPrimaryDark
+                        containerColor = themeColors.surfaceElevated,
+                        titleContentColor = themeColors.textPrimary
                     ),
                     navigationIcon = {
                         IconButton(onClick = { selectedIds.clear() }) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "إلغاء التحديد", tint = TextPrimaryDark)
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "إلغاء التحديد", tint = themeColors.textPrimary)
                         }
                     },
                     title = {
@@ -182,7 +184,7 @@ fun HomeScreen(
                             text = "تم تحديد ${selectedIds.size}",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TextPrimaryDark
+                            color = themeColors.textPrimary
                         )
                     },
                     actions = {
@@ -195,7 +197,7 @@ fun HomeScreen(
                                 selectedIds.addAll(conversations.map { it.id })
                             }
                         }) {
-                            Icon(imageVector = Icons.Default.SelectAll, contentDescription = "تحديد الكل", tint = CyanAccent)
+                            Icon(imageVector = Icons.Default.SelectAll, contentDescription = "تحديد الكل", tint = themeColors.secondary)
                         }
 
                         // Delete Selected button (moves to Recycle Bin)
@@ -207,8 +209,8 @@ fun HomeScreen(
             } else {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = SurfaceDark,
-                        titleContentColor = TextPrimaryDark
+                        containerColor = themeColors.surface,
+                        titleContentColor = themeColors.textPrimary
                     ),
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -216,13 +218,13 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(DarkEmerald),
+                                    .background(themeColors.primaryContainer),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Shield,
                                     contentDescription = null,
-                                    tint = NeonGreen,
+                                    tint = themeColors.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -278,11 +280,11 @@ fun HomeScreen(
         },
         bottomBar = {
             NavigationBar(
-                containerColor = SurfaceDark,
+                containerColor = themeColors.surface,
                 tonalElevation = 8.dp,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(width = 0.5.dp, color = BorderDark)
+                    .border(width = 0.5.dp, color = themeColors.border)
             ) {
                 // Tab 1: Home
                 NavigationBarItem(
@@ -306,11 +308,11 @@ fun HomeScreen(
                         )
                     },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = NeonGreen,
-                        selectedTextColor = NeonGreen,
-                        indicatorColor = DarkEmerald,
-                        unselectedIconColor = TextMutedDark,
-                        unselectedTextColor = TextMutedDark
+                        selectedIconColor = themeColors.primary,
+                        selectedTextColor = themeColors.primary,
+                        indicatorColor = themeColors.primaryContainer,
+                        unselectedIconColor = themeColors.textMuted,
+                        unselectedTextColor = themeColors.textMuted
                     )
                 )
 
@@ -339,8 +341,8 @@ fun HomeScreen(
                         selectedIconColor = DangerRed,
                         selectedTextColor = DangerRed,
                         indicatorColor = DangerRedContainer,
-                        unselectedIconColor = TextMutedDark,
-                        unselectedTextColor = TextMutedDark
+                        unselectedIconColor = themeColors.textMuted,
+                        unselectedTextColor = themeColors.textMuted
                     )
                 )
 
@@ -366,11 +368,11 @@ fun HomeScreen(
                         )
                     },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = CyanAccent,
-                        selectedTextColor = CyanAccent,
-                        indicatorColor = Color(0xFF003840),
-                        unselectedIconColor = TextMutedDark,
-                        unselectedTextColor = TextMutedDark
+                        selectedIconColor = themeColors.secondary,
+                        selectedTextColor = themeColors.secondary,
+                        indicatorColor = themeColors.primaryContainer,
+                        unselectedIconColor = themeColors.textMuted,
+                        unselectedTextColor = themeColors.textMuted
                     )
                 )
 
@@ -396,11 +398,11 @@ fun HomeScreen(
                         )
                     },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = NeonGreen,
-                        selectedTextColor = NeonGreen,
-                        indicatorColor = DarkEmerald,
-                        unselectedIconColor = TextMutedDark,
-                        unselectedTextColor = TextMutedDark
+                        selectedIconColor = themeColors.primary,
+                        selectedTextColor = themeColors.primary,
+                        indicatorColor = themeColors.primaryContainer,
+                        unselectedIconColor = themeColors.textMuted,
+                        unselectedTextColor = themeColors.textMuted
                     )
                 )
             }
@@ -689,13 +691,24 @@ fun ConversationCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val themeColors = com.example.ui.theme.VaultTheme.colors
+    val privacyManager = remember { com.example.util.PrivacyBlurManager.get(context) }
+    val privacyConfig by privacyManager.stateFlow.collectAsState()
+
+    val isSenderBlurred = privacyConfig.isMasterBlurEnabled && privacyConfig.blurSenderNames
+    val isPreviewBlurred = privacyConfig.isMasterBlurEnabled && privacyConfig.blurHomePreviews
+
+    val displayTitle = if (isSenderBlurred) "••••••••" else conversation.chatTitle
+    val displayPreview = if (isPreviewBlurred) "••••••••••••••••••••••••" else conversation.lastMessageText
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .border(
                 width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) NeonGreen else BorderDark,
+                color = if (isSelected) themeColors.primary else themeColors.border,
                 shape = RoundedCornerShape(16.dp)
             )
             .combinedClickable(
@@ -704,7 +717,7 @@ fun ConversationCard(
             )
             .testTag("conversation_card_${conversation.id}"),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) SurfaceElevatedDark else SurfaceDark
+            containerColor = if (isSelected) themeColors.surfaceElevated else themeColors.surface
         )
     ) {
         Row(
@@ -716,68 +729,68 @@ fun ConversationCard(
                     modifier = Modifier
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(if (isSelected) NeonGreen else SurfaceElevatedDark)
-                        .border(1.5.dp, if (isSelected) NeonGreen else BorderDark, CircleShape),
+                        .background(if (isSelected) themeColors.primary else themeColors.surfaceElevated)
+                        .border(1.5.dp, if (isSelected) themeColors.primary else themeColors.border, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isSelected) {
-                        Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.width(10.dp))
             }
 
+            // Single distinct App Icon Avatar (48-52dp) with real PackageManager logo and single App Twin badge
             AppAvatarIcon(
                 packageName = conversation.packageName,
-                chatTitle = conversation.chatTitle,
-                isClonedApp = conversation.isClonedApp
+                isClonedApp = conversation.isClonedApp,
+                size = 50.dp
             )
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
+                // Header row: Sender Name (chatTitle) and Timestamp without icon duplication
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f, fill = false)
-                    ) {
-                        AppSourceIcon(
-                            packageName = conversation.packageName,
-                            isClonedApp = conversation.isClonedApp,
-                            size = 22.dp,
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
-                        Text(
-                            text = conversation.chatTitle,
-                            color = TextPrimaryDark,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Text(
+                        text = displayTitle,
+                        color = themeColors.textPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
                         text = DateTimeUtils.formatConversationTimestamp(conversation.lastMessageTimestamp),
-                        color = TextMutedDark,
+                        color = themeColors.textMuted,
                         fontSize = 11.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(5.dp))
 
+                // Subtitle row: Last Message Snippet (or blurred) and Badges
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = conversation.lastMessageText,
-                        color = TextSecondaryDark,
+                        text = displayPreview,
+                        color = themeColors.textSecondary,
                         fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -788,11 +801,7 @@ fun ConversationCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AppSourceBadge(
-                            packageName = conversation.packageName,
-                            isClonedApp = conversation.isClonedApp
-                        )
-
+                        // Deleted messages count badge (if any)
                         if (conversation.deletedMessagesCount > 0) {
                             Box(
                                 modifier = Modifier
@@ -809,15 +818,16 @@ fun ConversationCard(
                             }
                         }
 
+                        // Total message count badge
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .background(SurfaceElevatedDark)
+                                .background(themeColors.surfaceElevated)
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = "${conversation.messageCount}",
-                                color = TextMutedDark,
+                                color = themeColors.textMuted,
                                 fontSize = 10.sp
                             )
                         }

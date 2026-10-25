@@ -59,8 +59,18 @@ class MainActivity : FragmentActivity() {
 
         extractConversationId(intent)
 
+        val themeManager = com.example.ui.theme.AppThemeManager.get(this)
+        val privacyManager = com.example.util.PrivacyBlurManager.get(this)
+
         setContent {
-            MessageVaultTheme {
+            val themeConfig by themeManager.themeConfigState.collectAsState()
+            val privacyConfig by privacyManager.stateFlow.collectAsState()
+
+            LaunchedEffect(privacyConfig.isScreenSecurityEnabled) {
+                privacyManager.applyScreenSecurityToActivity(this@MainActivity, privacyConfig.isScreenSecurityEnabled)
+            }
+
+            MessageVaultTheme(themeConfig = themeConfig) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     AppNavigation(
                         translationManager = translationManager,

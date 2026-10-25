@@ -4,12 +4,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -28,15 +25,100 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DarkEmerald
-import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.SurfaceDark
 import com.example.ui.theme.SurfaceElevatedDark
+import com.example.ui.theme.VaultTheme
 import com.example.util.AppIconProvider
 
 /**
- * Standardized Application Source Icon (24-28dp) using PackageManager
- * with high-fidelity vector brand fallbacks and HONOR App Twin clone badge.
+ * Modern circular Avatar (48-56dp) displaying the real application logo via PackageManager,
+ * with high-fidelity vector fallback, and a single neat «مستنسخ» badge for HONOR App Twin.
+ * Completely replaces the outdated letter circle without icon duplication.
+ */
+@Composable
+fun AppAvatarIcon(
+    packageName: String,
+    isClonedApp: Boolean,
+    chatTitle: String = "",
+    modifier: Modifier = Modifier,
+    size: Dp = 50.dp
+) {
+    val context = LocalContext.current
+    val appIcon = remember(packageName) {
+        AppIconProvider.getAppIcon(context, packageName)
+    }
+    val fallbackRes = remember(packageName) {
+        AppIconProvider.getFallbackIconRes(packageName)
+    }
+    val appLabel = remember(packageName, isClonedApp) {
+        AppIconProvider.getAppLabel(context, packageName, isClonedApp)
+    }
+
+    val themeColors = VaultTheme.colors
+
+    Box(
+        modifier = modifier.size(if (isClonedApp) size + 4.dp else size),
+        contentAlignment = Alignment.Center
+    ) {
+        // Main Avatar Circle: Background Container with clean border
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(if (themeColors.isDark) SurfaceElevatedDark else Color(0xFFF1F5F9))
+                .border(
+                    width = 1.2.dp,
+                    color = if (isClonedApp) CyanAccent.copy(alpha = 0.8f) else themeColors.border,
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            val iconInnerSize = size * 0.70f
+            if (appIcon != null) {
+                Image(
+                    bitmap = appIcon,
+                    contentDescription = appLabel,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(iconInnerSize)
+                        .clip(CircleShape)
+                )
+            } else {
+                Image(
+                    painter = painterResource(id = fallbackRes),
+                    contentDescription = appLabel,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(iconInnerSize)
+                )
+            }
+        }
+
+        // Single elegant "مستنسخ" badge for HONOR MagicOS App Twin
+        if (isClonedApp) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 2.dp, y = 2.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF00363A))
+                    .border(0.8.dp, CyanAccent, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = "مستنسخ",
+                    color = CyanAccent,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Standardized single app icon (24-28dp) for top app bars or specific headers.
  */
 @Composable
 fun AppSourceIcon(
@@ -58,10 +140,9 @@ fun AppSourceIcon(
     }
 
     Box(
-        modifier = modifier.size(if (isClonedApp && showCloneBadge) size + 6.dp else size),
+        modifier = modifier.size(if (isClonedApp && showCloneBadge) size + 4.dp else size),
         contentAlignment = Alignment.Center
     ) {
-        // App Icon (PackageManager or Fallback Vector)
         Box(
             modifier = Modifier
                 .size(size)
@@ -75,37 +156,32 @@ fun AppSourceIcon(
                     bitmap = appIcon,
                     contentDescription = appLabel,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .size(size)
-                        .clip(CircleShape)
+                    modifier = Modifier.size(size * 0.75f).clip(CircleShape)
                 )
             } else {
                 Image(
                     painter = painterResource(id = fallbackRes),
                     contentDescription = appLabel,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .size(size)
-                        .clip(CircleShape)
+                    modifier = Modifier.size(size * 0.75f)
                 )
             }
         }
 
-        // Small "مستنسخ" badge for HONOR MagicOS App Twin
         if (isClonedApp && showCloneBadge) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 4.dp, y = 4.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .offset(x = 2.dp, y = 2.dp)
+                    .clip(RoundedCornerShape(3.dp))
                     .background(Color(0xFF00363A))
-                    .border(0.8.dp, CyanAccent, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 3.dp, vertical = 0.5.dp)
+                    .border(0.6.dp, CyanAccent, RoundedCornerShape(3.dp))
+                    .padding(horizontal = 2.5.dp, vertical = 0.5.dp)
             ) {
                 Text(
                     text = "مستنسخ",
                     color = CyanAccent,
-                    fontSize = 7.5.sp,
+                    fontSize = 7.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -113,104 +189,28 @@ fun AppSourceIcon(
     }
 }
 
-/**
- * Source badge with real icon, app name label, and App Twin clone indication.
- */
 @Composable
 fun AppSourceBadge(
     packageName: String,
     isClonedApp: Boolean,
-    modifier: Modifier = Modifier,
-    iconSize: Dp = 20.dp,
-    showLabel: Boolean = true
-) {
-    val context = LocalContext.current
-    val label = remember(packageName, isClonedApp) {
-        AppIconProvider.getAppLabel(context, packageName, isClonedApp)
-    }
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isClonedApp) Color(0xFF00272B) else DarkEmerald.copy(alpha = 0.5f))
-            .border(
-                width = 1.dp,
-                color = if (isClonedApp) CyanAccent.copy(alpha = 0.6f) else NeonGreen.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(8.dp)
-            )
-            .padding(horizontal = 6.dp, vertical = 3.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppSourceIcon(
-                packageName = packageName,
-                isClonedApp = isClonedApp,
-                size = iconSize,
-                showCloneBadge = false
-            )
-            if (showLabel) {
-                Spacer(modifier = Modifier.width(5.dp))
-                Text(
-                    text = label,
-                    color = if (isClonedApp) CyanAccent else NeonGreen,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-
-/**
- * Avatar with contact initial and badged Real Application Source icon at corner
- */
-@Composable
-fun AppAvatarIcon(
-    packageName: String,
-    chatTitle: String,
-    isClonedApp: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val initialLetter = chatTitle.take(1).uppercase().ifBlank { "؟" }
-
+    val context = LocalContext.current
+    val appLabel = remember(packageName, isClonedApp) {
+        AppIconProvider.getAppLabel(context, packageName, isClonedApp)
+    }
     Box(
-        modifier = modifier.size(50.dp),
-        contentAlignment = Alignment.Center
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(SurfaceElevatedDark)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
-        // Main Avatar Circle
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF092015))
-                .border(
-                    width = 1.2.dp,
-                    color = if (isClonedApp) CyanAccent else NeonGreen.copy(alpha = 0.5f),
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = initialLetter,
-                color = if (isClonedApp) CyanAccent else NeonGreen,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        // Real app icon badged at bottom-end corner
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .offset(x = 2.dp, y = 2.dp)
-        ) {
-            AppSourceIcon(
-                packageName = packageName,
-                isClonedApp = isClonedApp,
-                size = 22.dp,
-                showCloneBadge = true
-            )
-        }
+        Text(
+            text = appLabel,
+            color = CyanAccent,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
+

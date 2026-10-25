@@ -29,9 +29,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,26 +43,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.MessageVaultRepository
 import com.example.ui.components.AppAvatarIcon
-import com.example.ui.components.AppSourceBadge
-import com.example.ui.components.AppSourceIcon
 import com.example.ui.home.formatTime
-import com.example.ui.theme.BorderDark
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.DangerRedContainer
-import com.example.ui.theme.DarkEmerald
-import com.example.ui.theme.DeepObsidian
-import com.example.ui.theme.NeonGreen
-import com.example.ui.theme.SurfaceDark
-import com.example.ui.theme.SurfaceElevatedDark
-import com.example.ui.theme.TextMutedDark
-import com.example.ui.theme.TextPrimaryDark
-import com.example.ui.theme.TextSecondaryDark
+import com.example.ui.theme.VaultTheme
+import com.example.util.PrivacyBlurConfig
+import com.example.util.PrivacyBlurManager
 
 @Composable
 fun DeletedTab(
     repository: MessageVaultRepository,
     onConversationClick: (Long) -> Unit
 ) {
+    val context = LocalContext.current
+    val privacyManager = remember { PrivacyBlurManager.get(context) }
+    val privacyConfig by privacyManager.configFlow.collectAsState(initial = PrivacyBlurConfig())
+    val colors = VaultTheme.colors
+
     val conversations by repository.allConversations.collectAsState(initial = emptyList())
     val deletedConversations = conversations.filter { it.deletedMessagesCount > 0 }
     val totalDeletedMessages = deletedConversations.sumOf { it.deletedMessagesCount }
@@ -67,7 +67,7 @@ fun DeletedTab(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DeepObsidian)
+            .background(colors.background)
             .padding(16.dp)
     ) {
         // Stats Banner
@@ -106,7 +106,7 @@ fun DeletedTab(
                     )
                     Text(
                         text = "$totalDeletedMessages رسالة قام أصحابها بحذفها ولكنها محفوظة لديك 🔒",
-                        color = TextSecondaryDark,
+                        color = colors.textSecondary,
                         fontSize = 11.sp
                     )
                 }
@@ -127,26 +127,26 @@ fun DeletedTab(
                         modifier = Modifier
                             .size(72.dp)
                             .clip(CircleShape)
-                            .background(DarkEmerald),
+                            .background(colors.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Security,
                             contentDescription = null,
-                            tint = NeonGreen,
+                            tint = colors.accent,
                             modifier = Modifier.size(36.dp)
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "لا توجد رسائل محذوفة حتى الآن",
-                        color = TextPrimaryDark,
+                        color = colors.textPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "عندما يرسل لك شخص رسالة على واتساب أو تيليجرام ثم يضغط \"حذف لدى الجميع\"، سيتم توثيقها والاحتفاظ بها هنا فورًا دون فقدانها.",
-                        color = TextMutedDark,
+                        color = colors.textMuted,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 8.dp)
@@ -162,22 +162,27 @@ fun DeletedTab(
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
                 items(deletedConversations, key = { it.id }) { conv ->
+                    val shouldBlurSender = privacyConfig.isMasterBlurActive && privacyConfig.blurSenderNames
+                    val shouldBlurPreview = privacyConfig.isMasterBlurActive && privacyConfig.blurHomePreviews
+
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .border(1.dp, BorderDark, RoundedCornerShape(16.dp))
+                            .border(1.dp, colors.cardBorder, RoundedCornerShape(16.dp))
                             .clickable { onConversationClick(conv.id) },
-                        colors = CardDefaults.cardColors(containerColor = SurfaceDark)
+                        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Single dedicated app avatar (50dp) with clone badge if twin
                             AppAvatarIcon(
                                 packageName = conv.packageName,
                                 chatTitle = conv.chatTitle,
-                                isClonedApp = conv.isClonedApp
+                                isClonedApp = conv.isClonedApp,
+                                size = 50.dp
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -186,61 +191,46 @@ fun DeletedTab(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    ) {
-                                        AppSourceIcon(
-                                            packageName = conv.packageName,
-                                            isClonedApp = conv.isClonedApp,
-                                            size = 22.dp,
-                                            modifier = Modifier.padding(end = 6.dp)
-                                        )
-                                        Text(
-                                            text = conv.chatTitle,
-                                            color = TextPrimaryDark,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
+                                    // True sender name
+                                    Text(
+                                        text = conv.chatTitle,
+                                        color = colors.textPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .then(if (shouldBlurSender) Modifier.blur(8.dp) else Modifier)
+                                    )
                                     Text(
                                         text = formatTime(conv.lastMessageTimestamp),
-                                        color = TextMutedDark,
+                                        color = colors.textMuted,
                                         fontSize = 10.sp
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = conv.lastMessageText,
-                                    color = TextSecondaryDark,
+                                    color = colors.textSecondary,
                                     fontSize = 12.sp,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = if (shouldBlurPreview) Modifier.blur(8.dp) else Modifier
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(DangerRedContainer)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
-                                    AppSourceBadge(
-                                        packageName = conv.packageName,
-                                        isClonedApp = conv.isClonedApp
+                                    Text(
+                                        text = "${conv.deletedMessagesCount} رسالة محذوفة",
+                                        color = DangerRed,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(DangerRedContainer)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = "${conv.deletedMessagesCount} رسالة محذوفة",
-                                            color = DangerRed,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
                                 }
                             }
                         }

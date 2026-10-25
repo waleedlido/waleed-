@@ -1,0 +1,6 @@
+{
+  "name": "الرسائل المحذوفة",
+  "description": "تطبيق متكامل لحفظ الرسائل المحذوفة وتوثيق إشعارات المحادثات مع الترجمة الفورية وحماية البصمة وتوافق كامل مع أجهزة HONOR بنظام MagicOS",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

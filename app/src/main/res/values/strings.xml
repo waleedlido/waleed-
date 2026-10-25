@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">الرسائل المحذوفة</string>
+    <string name="app_subtitle">حفظ وتوثيق الإشعارات والرسائل</string>
+    <string name="notification_service_label">خدمة حفظ وتوثيق الرسائل المحذوفة</string>
+    <string name="developer_name">Waleed Al-khatib</string>
+    <string name="developer_title">م. وليد الخطيب</string>
+</resources>

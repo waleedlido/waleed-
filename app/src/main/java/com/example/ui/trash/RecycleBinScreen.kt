@@ -70,6 +70,7 @@ import com.example.data.model.ConversationEntity
 import com.example.data.repository.MessageVaultRepository
 import com.example.ui.components.AppAvatarIcon
 import com.example.ui.components.AppSourceBadge
+import com.example.ui.components.AppSourceIcon
 import com.example.ui.home.formatTime
 import com.example.ui.theme.BorderDark
 import com.example.ui.theme.CyanAccent
@@ -463,14 +464,25 @@ fun TrashConversationCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = conversation.chatTitle,
-                            color = TextPrimaryDark,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            AppSourceIcon(
+                                packageName = conversation.packageName,
+                                isClonedApp = conversation.isClonedApp,
+                                size = 22.dp,
+                                modifier = Modifier.padding(end = 6.dp)
+                            )
+                            Text(
+                                text = conversation.chatTitle,
+                                color = TextPrimaryDark,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Text(
                             text = "حُذفت ${formatTime(conversation.trashedAt ?: conversation.lastMessageTimestamp)}",
                             color = TextMutedDark,

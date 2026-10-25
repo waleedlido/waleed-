@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Messenger Blue Circle/Bubble -->
+    <path
+        android:fillColor="#0084FF"
+        android:pathData="M24,5C13.5,5 5,13 5,23C5,28.5 7.6,33.3 11.7,36.5L10.5,42.5L16.8,39.3C19,39.9 21.5,40.3 24,40.3C34.5,40.3 43,32.3 43,22.3C43,12.3 34.5,5 24,5Z" />
+    <!-- Messenger Lightning Bolt -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16.5,27.5L22.5,18L26.5,22.5L31.5,18L25.5,27.5L21.5,23Z" />
+</vector>

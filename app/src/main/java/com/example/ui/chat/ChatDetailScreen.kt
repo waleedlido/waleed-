@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,10 +34,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,6 +56,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -80,6 +87,7 @@ import com.example.ml.TranslationManager
 import com.example.ml.TranslationResult
 import com.example.ui.components.AppAvatarIcon
 import com.example.ui.components.AppSourceBadge
+import com.example.ui.components.AppSourceIcon
 import com.example.ui.theme.BorderDark
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DangerRed
@@ -88,6 +96,8 @@ import com.example.ui.theme.DarkEmerald
 import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.SurfaceDark
+import com.example.util.AppIconProvider
+import com.example.util.DateTimeUtils
 import com.example.ui.theme.SurfaceElevatedDark
 import com.example.ui.theme.TextMutedDark
 import com.example.ui.theme.TextPrimaryDark
@@ -237,6 +247,7 @@ fun ChatDetailScreen(
     }
 
     var isTranslatingAll by remember { mutableStateOf(false) }
+    var selectedMessageForDetails by remember { mutableStateOf<MessageEntity?>(null) }
 
     Scaffold(
         containerColor = DeepObsidian,
@@ -267,13 +278,23 @@ fun ChatDetailScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                         }
                         Column {
-                            Text(
-                                text = conversation?.chatTitle ?: "المحادثة",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimaryDark,
-                                maxLines = 1
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                conversation?.let { conv ->
+                                    AppSourceIcon(
+                                        packageName = conv.packageName,
+                                        isClonedApp = conv.isClonedApp,
+                                        size = 18.dp,
+                                        modifier = Modifier.padding(end = 6.dp)
+                                    )
+                                }
+                                Text(
+                                    text = conversation?.chatTitle ?: "المحادثة",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimaryDark,
+                                    maxLines = 1
+                                )
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 conversation?.let { conv ->
                                     AppSourceBadge(
@@ -351,30 +372,42 @@ fun ChatDetailScreen(
                     .fillMaxSize()
                     .testTag("chat_messages_list"),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(
+                itemsIndexed(
                     items = messages,
-                    key = { it.id }
-                ) { message ->
-                    MessageBubble(
-                        message = message,
-                        packageName = conversation?.packageName ?: "",
-                        isClonedApp = conversation?.isClonedApp ?: false,
-                        onTranslateClick = {
-                            coroutineScope.launch {
-                                val result = translationManager.translateText(message.messageText)
-                                when (result) {
-                                    is TranslationResult.Success -> {
-                                        repository.updateMessageTranslation(message.id, result.translatedText, result.languageCode)
-                                    }
-                                    is TranslationResult.Error -> {
-                                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                    key = { _, it -> it.id }
+                ) { index, message ->
+                    val showDateHeader = index == 0 || !DateTimeUtils.isSameDay(messages[index - 1].timestamp, message.timestamp)
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        if (showDateHeader) {
+                            DateSeparatorHeader(
+                                label = DateTimeUtils.formatDateHeader(message.timestamp),
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+
+                        MessageBubble(
+                            message = message,
+                            packageName = conversation?.packageName ?: "",
+                            isClonedApp = conversation?.isClonedApp ?: false,
+                            onBubbleClick = { selectedMessageForDetails = message },
+                            onTranslateClick = {
+                                coroutineScope.launch {
+                                    val result = translationManager.translateText(message.messageText)
+                                    when (result) {
+                                        is TranslationResult.Success -> {
+                                            repository.updateMessageTranslation(message.id, result.translatedText, result.languageCode)
+                                        }
+                                        is TranslationResult.Error -> {
+                                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                        }
                                     }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
 
@@ -515,6 +548,42 @@ fun ChatDetailScreen(
             }
         }
     }
+
+    // Message Details Modal Dialog
+    selectedMessageForDetails?.let { msg ->
+        MessageDetailsDialog(
+            message = msg,
+            packageName = conversation?.packageName ?: "",
+            isClonedApp = conversation?.isClonedApp ?: false,
+            onDismiss = { selectedMessageForDetails = null }
+        )
+    }
+}
+
+@Composable
+fun DateSeparatorHeader(
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(SurfaceElevatedDark)
+                .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 5.dp)
+        ) {
+            Text(
+                text = label,
+                color = TextSecondaryDark,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
 }
 
 @Composable
@@ -522,6 +591,7 @@ fun MessageBubble(
     message: MessageEntity,
     packageName: String,
     isClonedApp: Boolean,
+    onBubbleClick: () -> Unit,
     onTranslateClick: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -541,7 +611,8 @@ fun MessageBubble(
                     width = 1.dp,
                     color = if (message.isDeletedBySender) DangerRed.copy(alpha = 0.6f) else BorderDark,
                     shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
-                ),
+                )
+                .clickable { onBubbleClick() },
             colors = CardDefaults.cardColors(
                 containerColor = if (message.isDeletedBySender) Color(0xFF180B0D) else SurfaceDark
             ),
@@ -549,7 +620,7 @@ fun MessageBubble(
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
 
-                // Sender Name, App Badge & Full Timestamp
+                // Sender Name, App Icon, Badge & Full Timestamp
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -559,6 +630,12 @@ fun MessageBubble(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f, fill = false)
                     ) {
+                        AppSourceIcon(
+                            packageName = packageName,
+                            isClonedApp = message.isFromClonedApp || isClonedApp,
+                            size = 20.dp,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
                         Text(
                             text = message.senderName,
                             color = if (message.isDeletedBySender) DangerRed else NeonGreen,
@@ -568,12 +645,13 @@ fun MessageBubble(
                         Spacer(modifier = Modifier.width(6.dp))
                         AppSourceBadge(
                             packageName = packageName,
-                            isClonedApp = message.isFromClonedApp || isClonedApp
+                            isClonedApp = message.isFromClonedApp || isClonedApp,
+                            iconSize = 14.dp
                         )
                     }
 
                     Text(
-                        text = formatDetailedDate(message.timestamp),
+                        text = DateTimeUtils.formatShortTime(message.timestamp),
                         color = TextMutedDark,
                         fontSize = 10.sp
                     )
@@ -667,69 +745,280 @@ fun MessageBubble(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Bottom Actions Row (Translate button & Copy button)
+                // Bottom Actions Row (Translate button & Copy button & Details prompt)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Translate Button
-                    Box(
+                    // Clickable hint for details
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceElevatedDark)
-                            .clickable {
-                                if (!isTranslatingLocal) {
-                                    isTranslatingLocal = true
-                                    onTranslateClick()
-                                    isTranslatingLocal = false
-                                }
-                            }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { onBubbleClick() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Translate,
-                                contentDescription = "ترجمة",
-                                tint = NeonGreen,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "تفاصيل الرسالة",
+                            tint = CyanAccent,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "تفاصيل الرسالة",
+                            color = CyanAccent,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Translate Button
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SurfaceElevatedDark)
+                                .clickable {
+                                    if (!isTranslatingLocal) {
+                                        isTranslatingLocal = true
+                                        onTranslateClick()
+                                        isTranslatingLocal = false
+                                    }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = "ترجمة",
+                                    tint = NeonGreen,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (message.translatedText == null) "ترجمة" else "إعادة الترجمة",
+                                    color = NeonGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Copy Button
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SurfaceElevatedDark)
+                                .clickable {
+                                    clipboardManager.setText(AnnotatedString(message.messageText))
+                                    Toast.makeText(context, "تم نسخ النص الأصلي", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
                             Text(
-                                text = if (message.translatedText == null) "ترجمة" else "إعادة الترجمة",
-                                color = NeonGreen,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
+                                text = "نسخ",
+                                color = TextSecondaryDark,
+                                fontSize = 11.sp
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Copy Button
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceElevatedDark)
-                            .clickable {
-                                clipboardManager.setText(AnnotatedString(message.messageText))
-                                Toast.makeText(context, "تم نسخ النص الأصلي", Toast.LENGTH_SHORT).show()
-                            }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Text(
-                            text = "نسخ",
-                            color = TextSecondaryDark,
-                            fontSize = 11.sp
-                        )
-                    }
                 }
+            }
+        }
+
+        // Rich Date & Time under message bubble
+        Row(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(top = 3.dp, start = 6.dp, end = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = DateTimeUtils.formatMessageBubbleTime(message.timestamp),
+                color = TextMutedDark,
+                fontSize = 10.sp
+            )
+            if (message.isDeletedBySender && message.deletedDetectedAt != null) {
+                Text(
+                    text = "رُصد الحذف: ${DateTimeUtils.formatShortTime(message.deletedDetectedAt)}",
+                    color = DangerRed,
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
 }
 
+@Composable
+fun MessageDetailsDialog(
+    message: MessageEntity,
+    packageName: String,
+    isClonedApp: Boolean,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val appLabel = remember(packageName, isClonedApp) {
+        AppIconProvider.getAppLabel(context, packageName, isClonedApp)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceDark,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AppSourceIcon(
+                    packageName = packageName,
+                    isClonedApp = message.isFromClonedApp || isClonedApp,
+                    size = 26.dp
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "تفاصيل الرسالة وتوثيقها",
+                    color = TextPrimaryDark,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                DetailItem(
+                    label = "التطبيق المصدر:",
+                    value = "$appLabel ($packageName)"
+                )
+
+                DetailItem(
+                    label = "حالة الاستنساخ (App Twin):",
+                    value = if (message.isFromClonedApp || isClonedApp) "تطبيق مستنسخ (HONOR App Twin / Multi-App)" else "تطبيق أصلي أساسي",
+                    valueColor = if (message.isFromClonedApp || isClonedApp) CyanAccent else TextSecondaryDark
+                )
+
+                DetailItem(
+                    label = "اسم المرسل:",
+                    value = message.senderName
+                )
+
+                DetailItem(
+                    label = "تاريخ ووقت وصول الإشعار:",
+                    value = DateTimeUtils.formatFullDetailedDateTime(message.timestamp)
+                )
+
+                if (message.isDeletedBySender) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(DangerRedContainer)
+                            .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "⚠️ تم رصد قيام الطرف الآخر بحذف هذه الرسالة!",
+                                color = DangerRed,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (message.deletedDetectedAt != null && message.deletedDetectedAt > 0) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "توقيت رصد الحذف: ${DateTimeUtils.formatFullDetailedDateTime(message.deletedDetectedAt)}",
+                                    color = TextPrimaryDark,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    DetailItem(
+                        label = "حالة الحذف:",
+                        value = "رسالة أصلية محفوظة (لم يتم حذفها)",
+                        valueColor = NeonGreen
+                    )
+                }
+
+                Column {
+                    Text("النص الأصلي المحفوظ:", color = TextMutedDark, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceElevatedDark)
+                            .border(1.dp, BorderDark, RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = message.messageText,
+                            color = TextPrimaryDark,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                if (message.contentHash.isNotBlank()) {
+                    DetailItem(
+                        label = "بصمة التحقق المشفرة (Hash):",
+                        value = message.contentHash
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val detailsReport = """
+                        --- تقرير توثيق الرسالة المحفوظة ---
+                        المرسل: ${message.senderName}
+                        التطبيق المصدر: $appLabel ($packageName)
+                        مستنسخ: ${if (message.isFromClonedApp || isClonedApp) "نعم (HONOR App Twin)" else "لا"}
+                        وقت الاستلام: ${DateTimeUtils.formatFullDetailedDateTime(message.timestamp)}
+                        حالة الحذف: ${if (message.isDeletedBySender) "تم حذفها من الطرف الآخر (توقيت الرصد: ${DateTimeUtils.formatFullDetailedDateTime(message.deletedDetectedAt ?: 0)})" else "غير محذوفة"}
+                        النص المحفوظ: ${message.messageText}
+                        بصمة التحقق: ${message.contentHash}
+                    """.trimIndent()
+                    clipboardManager.setText(AnnotatedString(detailsReport))
+                    Toast.makeText(context, "تم نسخ تقرير الرسالة بالكامل", Toast.LENGTH_SHORT).show()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = DarkEmerald, contentColor = NeonGreen)
+            ) {
+                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("نسخ التقرير")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إغلاق", color = TextSecondaryDark)
+            }
+        }
+    )
+}
+
+@Composable
+private fun DetailItem(
+    label: String,
+    value: String,
+    valueColor: Color = TextPrimaryDark
+) {
+    Column {
+        Text(text = label, color = TextMutedDark, fontSize = 11.sp)
+        Text(text = value, color = valueColor, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
 fun formatDetailedDate(timestamp: Long): String {
-    val sdf = SimpleDateFormat("d MMM، h:mm a", Locale("ar"))
-    return sdf.format(Date(timestamp))
+    return DateTimeUtils.formatMessageBubbleTime(timestamp)
 }

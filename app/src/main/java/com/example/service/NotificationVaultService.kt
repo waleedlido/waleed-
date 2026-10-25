@@ -62,9 +62,9 @@ class NotificationVaultService : NotificationListenerService() {
             return
         }
 
-        // Determine if cloned / twin app
+        // Determine if cloned / twin app (HONOR MagicOS App Twin, dual app profiles, etc.)
         val userHandleId = extractUserHandleId(sbn)
-        val isClonedApp = userHandleId != 0 || isClonedPackageName(packageName)
+        val isClonedApp = userHandleId != 0 || isClonedPackageName(packageName) || isHonorAppTwin(sbn)
 
         // Resolve app display name
         val appDisplayName = resolveAppDisplayName(packageName, isClonedApp)
@@ -73,7 +73,14 @@ class NotificationVaultService : NotificationListenerService() {
         val chatTitle = extractChatTitle(extras)
         val messageText = extractMessageText(extras)
         val senderName = extractSenderName(extras, chatTitle)
-        val timestamp = if (sbn.postTime > 0) sbn.postTime else System.currentTimeMillis()
+
+        // Preserve original notification timestamp without drift
+        val notificationWhen = notification.`when`
+        val timestamp = when {
+            sbn.postTime > 0 -> sbn.postTime
+            notificationWhen > 0 -> notificationWhen
+            else -> System.currentTimeMillis()
+        }
 
         if (chatTitle.isBlank() || messageText.isBlank()) {
             return
@@ -173,10 +180,28 @@ class NotificationVaultService : NotificationListenerService() {
             val user = sbn.user
             val stringRep = user.toString()
             val match = Regex("\\d+").find(stringRep)
-            match?.value?.toIntOrNull() ?: 0
+            val extracted = match?.value?.toIntOrNull() ?: 0
+            if (extracted != 0) return extracted
+
+            val keyParts = sbn.key?.split("|")
+            if (!keyParts.isNullOrEmpty()) {
+                val keyUserId = keyParts[0].toIntOrNull()
+                if (keyUserId != null && keyUserId != 0) {
+                    return keyUserId
+                }
+            }
+            0
         } catch (e: Exception) {
             0
         }
+    }
+
+    private fun isHonorAppTwin(sbn: StatusBarNotification): Boolean {
+        val key = sbn.key?.lowercase() ?: ""
+        val tag = sbn.tag?.lowercase() ?: ""
+        return key.contains("clone") || key.contains("twin") || key.contains("dual") ||
+                tag.contains("clone") || tag.contains("twin") ||
+                extractUserHandleId(sbn) > 0
     }
 
     private fun isClonedPackageName(packageName: String): Boolean {

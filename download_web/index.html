@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحميل تطبيق «الرسائل المحذوفة» — MessageVault Pro v1.0.3</title>
+    <style>
+        :root {
+            --bg-dark: #0A0F0D;
+            --surface-dark: #121A15;
+            --surface-elevated: #1B261F;
+            --emerald: #0A2E1A;
+            --neon-green: #00E676;
+            --cyan-accent: #00E5FF;
+            --danger-red: #FF3D71;
+            --text-primary: #FFFFFF;
+            --text-secondary: #B0BEC5;
+            --text-muted: #78909C;
+            --border: #23442C;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", "Noto Sans Arabic", Tahoma, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 16px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 680px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header-card {
+            background: linear-gradient(135deg, #0A2E1A 0%, #121A15 100%);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px 20px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 230, 118, 0.08);
+        }
+
+        .app-icon {
+            width: 72px;
+            height: 72px;
+            background: var(--surface-elevated);
+            border: 2px solid var(--neon-green);
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            margin-bottom: 14px;
+            box-shadow: 0 4px 14px rgba(0, 230, 118, 0.2);
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: rgba(0, 230, 118, 0.15);
+            color: var(--neon-green);
+            border: 1px solid var(--neon-green);
+            border-radius: 12px;
+            padding: 4px 12px;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .download-box {
+            background: var(--surface-dark);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .btn-primary {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: var(--neon-green);
+            color: #05140A;
+            font-size: 16px;
+            font-weight: 800;
+            padding: 16px 24px;
+            border-radius: 14px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 6px 20px rgba(0, 230, 118, 0.35);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 230, 118, 0.45);
+        }
+
+        .btn-secondary {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: var(--surface-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            font-size: 14px;
+            font-weight: 700;
+            padding: 13px 20px;
+            border-radius: 12px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--cyan-accent);
+            color: var(--cyan-accent);
+        }
+
+        .info-card {
+            background: var(--surface-dark);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 20px;
+        }
+
+        .info-card h3 {
+            font-size: 16px;
+            color: var(--neon-green);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .info-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .info-list li::before {
+            content: "✓";
+            color: var(--neon-green);
+            font-weight: bold;
+        }
+
+        .code-block {
+            background: #060B08;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 11px;
+            color: var(--cyan-accent);
+            word-break: break-all;
+            direction: ltr;
+            text-align: left;
+            margin-top: 4px;
+        }
+
+        .footer {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-card">
+        <div class="app-icon">🔒</div>
+        <h1>تطبيق الرسائل المحذوفة</h1>
+        <div class="badge">الإصدار v1.0.3 • رسمي وموقّع</div>
+        <p class="subtitle">
+            حفظ وتوثيق رسائل WhatsApp وMessenger وTelegram وSignal وSMS المحذوفة فورياً مع الترجمة الذكية ودعم WhatsApp المستنسخ (HONOR App Twin).
+        </p>
+    </div>
+
+    <div class="download-box">
+        <a href="DeletedMessages-v1.0.3.apk" download="DeletedMessages-v1.0.3.apk" class="btn-primary">
+            <span>📥</span>
+            <span>تحميل ملف التثبيت المباشر (APK) — v1.0.3</span>
+        </a>
+
+        <a href="DeletedMessages-Full-Project.zip" download="DeletedMessages-Full-Project.zip" class="btn-secondary">
+            <span>📦</span>
+            <span>تحميل سورس كود المشروع الكامل (ZIP)</span>
+        </a>
+    </div>
+
+    <div class="info-card">
+        <h3>✨ الجديد في هذا الإصدار (v1.0.3):</h3>
+        <ul class="info-list">
+            <li><strong>شعار التطبيق الحقيقي:</strong> استخدام PackageManager لجلب الأيقونات الأصلية المعتمدة لكل تطبيق بحجم 24–28dp.</li>
+            <li><strong>دعم WhatsApp المستنسخ:</strong> كشف تلقائي لحسابات HONOR App Twin مع شارة «مستنسخ» مميزة.</li>
+            <li><strong>دقة التاريخ والتوقيت:</strong> استبدال «الآن» بالتوقيت العربي الفعلي الدقيق وإضافة فواصل يومية («اليوم»، «أمس»).</li>
+            <li><strong>نافذة تفاصيل الرسالة:</strong> فحص دقيق لتوقيت استلام الإشعار، حالة الحذف بالثواني، وبصمة التحقق المشفرة.</li>
+            <li><strong>توافق الترقية المباشرة (In-Place Update):** نفس مفتاح التوقيع الرقمي، يتثبت فوق نسختك السابقة فوراً دون حذف البيانات.</li>
+        </ul>
+    </div>
+
+    <div class="info-card">
+        <h3>🔐 شهادة التوقيع الرقمية الثابتة:</h3>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">
+            بصمة SHA-256 للمفتاح المعتمد لضمان قبول التحديث على هاتفك دون تعارض:
+        </p>
+        <div class="code-block">F6:F6:75:4C:EE:8B:73:BC:0B:AD:6B:20:E6:C1:32:AD:FD:E3:E0:FB:C6:E9:75:BF:D5:20:87:86:22:7B:35:C8</div>
+    </div>
+
+    <div class="footer">
+        تطبيق Android Native مبني باستخدام Kotlin و Jetpack Compose و Room Database.
+    </div>
+</div>
+
+</body>
+</html>

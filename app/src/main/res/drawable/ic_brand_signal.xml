@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- Signal Blue Circle -->
+    <path
+        android:fillColor="#3A76F0"
+        android:pathData="M24,4C12.95,4 4,12.95 4,24C4,28.2 5.3,32.1 7.5,35.3L5,43L13,40.6C16.3,42.8 20,44 24,44C35.05,44 44,35.05 44,24C44,12.95 35.05,4 24,4Z" />
+    <!-- Signal Chat/Lock Icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,14C18.5,14 14,18 14,23C14,25.8 15.4,28.2 17.5,29.8L16.5,34L21,32.5C22,32.8 23,33 24,33C29.5,33 34,29 34,24C34,19 29.5,14 24,14Z" />
+    <path
+        android:fillColor="#3A76F0"
+        android:pathData="M24,20C22.3,20 21,21.3 21,23C21,24.7 22.3,26 24,26C25.7,26 27,24.7 27,23C27,21.3 25.7,20 24,20Z" />
+</vector>

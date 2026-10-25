@@ -1,73 +1,170 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.Message
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Sms
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DarkEmerald
+import com.example.ui.theme.DeepObsidian
 import com.example.ui.theme.NeonGreen
+import com.example.ui.theme.SurfaceDark
 import com.example.ui.theme.SurfaceElevatedDark
-import com.example.ui.theme.TelegramColor
-import com.example.ui.theme.WhatsAppColor
+import com.example.util.AppIconProvider
 
+/**
+ * Standardized Application Source Icon (24-28dp) using PackageManager
+ * with high-fidelity vector brand fallbacks and HONOR App Twin clone badge.
+ */
 @Composable
-fun AppSourceBadge(
+fun AppSourceIcon(
     packageName: String,
     isClonedApp: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    size: Dp = 26.dp,
+    showCloneBadge: Boolean = true
 ) {
-    val meta = resolveAppMetadata(packageName, isClonedApp)
+    val context = LocalContext.current
+    val appIcon = remember(packageName) {
+        AppIconProvider.getAppIcon(context, packageName)
+    }
+    val fallbackRes = remember(packageName) {
+        AppIconProvider.getFallbackIconRes(packageName)
+    }
+    val appLabel = remember(packageName, isClonedApp) {
+        AppIconProvider.getAppLabel(context, packageName, isClonedApp)
+    }
 
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(meta.backgroundColor)
-            .border(1.dp, meta.borderColor, RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+        modifier = modifier.size(if (isClonedApp && showCloneBadge) size + 6.dp else size),
+        contentAlignment = Alignment.Center
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = meta.icon,
-                contentDescription = null,
-                tint = meta.contentColor,
-                modifier = Modifier.size(11.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = meta.label,
-                color = meta.contentColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
+        // App Icon (PackageManager or Fallback Vector)
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(SurfaceElevatedDark)
+                .border(1.dp, if (isClonedApp) CyanAccent.copy(alpha = 0.8f) else Color(0x33FFFFFF), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (appIcon != null) {
+                Image(
+                    bitmap = appIcon,
+                    contentDescription = appLabel,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(size)
+                        .clip(CircleShape)
+                )
+            } else {
+                Image(
+                    painter = painterResource(id = fallbackRes),
+                    contentDescription = appLabel,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(size)
+                        .clip(CircleShape)
+                )
+            }
+        }
+
+        // Small "مستنسخ" badge for HONOR MagicOS App Twin
+        if (isClonedApp && showCloneBadge) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 4.dp, y = 4.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF00363A))
+                    .border(0.8.dp, CyanAccent, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 3.dp, vertical = 0.5.dp)
+            ) {
+                Text(
+                    text = "مستنسخ",
+                    color = CyanAccent,
+                    fontSize = 7.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
 
+/**
+ * Source badge with real icon, app name label, and App Twin clone indication.
+ */
+@Composable
+fun AppSourceBadge(
+    packageName: String,
+    isClonedApp: Boolean,
+    modifier: Modifier = Modifier,
+    iconSize: Dp = 20.dp,
+    showLabel: Boolean = true
+) {
+    val context = LocalContext.current
+    val label = remember(packageName, isClonedApp) {
+        AppIconProvider.getAppLabel(context, packageName, isClonedApp)
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isClonedApp) Color(0xFF00272B) else DarkEmerald.copy(alpha = 0.5f))
+            .border(
+                width = 1.dp,
+                color = if (isClonedApp) CyanAccent.copy(alpha = 0.6f) else NeonGreen.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 6.dp, vertical = 3.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppSourceIcon(
+                packageName = packageName,
+                isClonedApp = isClonedApp,
+                size = iconSize,
+                showCloneBadge = false
+            )
+            if (showLabel) {
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = label,
+                    color = if (isClonedApp) CyanAccent else NeonGreen,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Avatar with contact initial and badged Real Application Source icon at corner
+ */
 @Composable
 fun AppAvatarIcon(
     packageName: String,
@@ -75,92 +172,45 @@ fun AppAvatarIcon(
     isClonedApp: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val meta = resolveAppMetadata(packageName, isClonedApp)
+    val initialLetter = chatTitle.take(1).uppercase().ifBlank { "؟" }
 
     Box(
-        modifier = modifier
-            .size(46.dp)
-            .clip(CircleShape)
-            .background(meta.avatarBg)
-            .border(1.2.dp, if (isClonedApp) CyanAccent else meta.borderColor, CircleShape),
+        modifier = modifier.size(50.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = chatTitle.take(1).uppercase(),
-            color = meta.contentColor,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
+        // Main Avatar Circle
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF092015))
+                .border(
+                    width = 1.2.dp,
+                    color = if (isClonedApp) CyanAccent else NeonGreen.copy(alpha = 0.5f),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = initialLetter,
+                color = if (isClonedApp) CyanAccent else NeonGreen,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
 
-data class AppMetadata(
-    val label: String,
-    val icon: ImageVector,
-    val contentColor: Color,
-    val backgroundColor: Color,
-    val borderColor: Color,
-    val avatarBg: Color
-)
-
-fun resolveAppMetadata(packageName: String, isClonedApp: Boolean): AppMetadata {
-    val pkg = packageName.lowercase()
-    return when {
-        pkg.contains("whatsapp") && isClonedApp -> AppMetadata(
-            label = "واتساب (App Twin)",
-            icon = Icons.Default.Forum,
-            contentColor = CyanAccent,
-            backgroundColor = Color(0xFF00363A),
-            borderColor = CyanAccent.copy(alpha = 0.5f),
-            avatarBg = Color(0xFF00272B)
-        )
-        pkg.contains("whatsapp") -> AppMetadata(
-            label = if (pkg.contains("w4b")) "واتساب أعمال" else "واتساب",
-            icon = Icons.Default.Forum,
-            contentColor = WhatsAppColor,
-            backgroundColor = DarkEmerald,
-            borderColor = NeonGreen.copy(alpha = 0.4f),
-            avatarBg = Color(0xFF072111)
-        )
-        pkg.contains("telegram") -> AppMetadata(
-            label = "تيليجرام",
-            icon = Icons.Default.Send,
-            contentColor = TelegramColor,
-            backgroundColor = Color(0xFF0D2D42),
-            borderColor = TelegramColor.copy(alpha = 0.4f),
-            avatarBg = Color(0xFF0A1F2E)
-        )
-        pkg.contains("orca") || pkg.contains("messenger") -> AppMetadata(
-            label = "ماسنجر",
-            icon = Icons.Default.Chat,
-            contentColor = Color(0xFF0084FF),
-            backgroundColor = Color(0xFF0D2447),
-            borderColor = Color(0xFF0084FF).copy(alpha = 0.4f),
-            avatarBg = Color(0xFF071730)
-        )
-        pkg.contains("signal") || pkg.contains("securesms") -> AppMetadata(
-            label = "سيجنال",
-            icon = Icons.Default.Shield,
-            contentColor = Color(0xFF3A76F0),
-            backgroundColor = Color(0xFF132347),
-            borderColor = Color(0xFF3A76F0).copy(alpha = 0.4f),
-            avatarBg = Color(0xFF09142E)
-        )
-        pkg.contains("mms") || pkg.contains("messaging") -> AppMetadata(
-            label = "رسائل SMS",
-            icon = Icons.Default.Sms,
-            contentColor = Color(0xFFFFB300),
-            backgroundColor = Color(0xFF382A05),
-            borderColor = Color(0xFFFFB300).copy(alpha = 0.4f),
-            avatarBg = Color(0xFF241B03)
-        )
-        else -> AppMetadata(
-            label = if (isClonedApp) "تطبيق (مستنسخ)" else "محادثة",
-            icon = Icons.Default.Message,
-            contentColor = NeonGreen,
-            backgroundColor = SurfaceElevatedDark,
-            borderColor = Color(0xFF23442C),
-            avatarBg = SurfaceElevatedDark
-        )
+        // Real app icon badged at bottom-end corner
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 2.dp, y = 2.dp)
+        ) {
+            AppSourceIcon(
+                packageName = packageName,
+                isClonedApp = isClonedApp,
+                size = 22.dp,
+                showCloneBadge = true
+            )
+        }
     }
 }

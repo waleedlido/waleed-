@@ -91,6 +91,8 @@ import com.example.ml.TranslationManager
 import com.example.security.SecurityManager
 import com.example.ui.components.AppAvatarIcon
 import com.example.ui.components.AppSourceBadge
+import com.example.ui.components.AppSourceIcon
+import com.example.util.DateTimeUtils
 import com.example.ui.home.tabs.DeletedTab
 import com.example.ui.home.tabs.SearchTab
 import com.example.ui.settings.SettingsScreen
@@ -565,6 +567,7 @@ fun HomeTabContent(
             "مستنسخ (App Twin)" -> conversations.filter { it.isClonedApp }
             "تيليجرام" -> conversations.filter { it.packageName.contains("telegram") }
             "ماسنجر" -> conversations.filter { it.packageName.contains("orca") || it.packageName.contains("messenger") }
+            "سيجنال" -> conversations.filter { it.packageName.contains("signal") || it.packageName.contains("securesms") }
             "SMS" -> conversations.filter { it.packageName.contains("mms") || it.packageName.contains("messaging") }
             else -> conversations
         }
@@ -575,9 +578,10 @@ fun HomeTabContent(
             AccessRevokedBanner(context = context)
         }
 
-        // App Filters
-        val filterOptions = listOf("الكل", "واتساب", "مستنسخ (App Twin)", "تيليجرام", "ماسنجر", "SMS")
+        // App Filters - Horizontally scrollable without clipping
+        val filterOptions = listOf("الكل", "واتساب", "مستنسخ (App Twin)", "تيليجرام", "ماسنجر", "سيجنال", "SMS")
         LazyRow(
+            modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -737,18 +741,28 @@ fun ConversationCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = conversation.chatTitle,
-                        color = TextPrimaryDark,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f, fill = false)
-                    )
+                    ) {
+                        AppSourceIcon(
+                            packageName = conversation.packageName,
+                            isClonedApp = conversation.isClonedApp,
+                            size = 22.dp,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                        Text(
+                            text = conversation.chatTitle,
+                            color = TextPrimaryDark,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
                     Text(
-                        text = formatTime(conversation.lastMessageTimestamp),
+                        text = DateTimeUtils.formatConversationTimestamp(conversation.lastMessageTimestamp),
                         color = TextMutedDark,
                         fontSize = 11.sp
                     )
@@ -891,18 +905,5 @@ fun EmptyStateView(
 }
 
 fun formatTime(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    return when {
-        diff < 60_000 -> "الآن"
-        diff < 3600_000 -> "منذ ${diff / 60_000} د"
-        diff < 86400_000 -> {
-            val sdf = SimpleDateFormat("h:mm a", Locale("ar"))
-            sdf.format(Date(timestamp))
-        }
-        else -> {
-            val sdf = SimpleDateFormat("d MMM", Locale("ar"))
-            sdf.format(Date(timestamp))
-        }
-    }
+    return DateTimeUtils.formatConversationTimestamp(timestamp)
 }

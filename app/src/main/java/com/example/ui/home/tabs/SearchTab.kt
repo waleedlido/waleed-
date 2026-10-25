@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.repository.MessageVaultRepository
 import com.example.ui.components.AppAvatarIcon
 import com.example.ui.components.AppSourceBadge
+import com.example.ui.components.AppSourceIcon
 import com.example.ui.home.formatTime
 import com.example.ui.theme.BorderDark
 import com.example.ui.theme.DangerRed
@@ -175,14 +176,25 @@ fun SearchTab(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = conv.chatTitle,
-                                        color = TextPrimaryDark,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    ) {
+                                        AppSourceIcon(
+                                            packageName = conv.packageName,
+                                            isClonedApp = conv.isClonedApp,
+                                            size = 22.dp,
+                                            modifier = Modifier.padding(end = 6.dp)
+                                        )
+                                        Text(
+                                            text = conv.chatTitle,
+                                            color = TextPrimaryDark,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                     Text(
                                         text = formatTime(conv.lastMessageTimestamp),
                                         color = TextMutedDark,

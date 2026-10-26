@@ -137,7 +137,9 @@ data class CustomThemeColors(
     val incomingBubble: Color,
     val incomingBubbleBorder: Color,
     val deletedBubble: Color,
-    val deletedBubbleBorder: Color
+    val deletedBubbleBorder: Color,
+    val outgoingBubble: Color = primaryContainer,
+    val outgoingBubbleBorder: Color = border
 ) {
     val accent: Color get() = primary
     val cardBorder: Color get() = border
@@ -204,7 +206,9 @@ object ThemeColorFactory {
                 incomingBubble = palette.darkSurfaceColor,
                 incomingBubbleBorder = getDarkBorder(palette),
                 deletedBubble = Color(0xFF260D10),
-                deletedBubbleBorder = Color(0xFFFF453A).copy(alpha = 0.5f)
+                deletedBubbleBorder = Color(0xFFFF453A).copy(alpha = 0.5f),
+                outgoingBubble = getDarkOutgoingBubble(palette),
+                outgoingBubbleBorder = palette.primaryColor.copy(alpha = 0.4f)
             )
         } else {
             CustomThemeColors(
@@ -222,9 +226,31 @@ object ThemeColorFactory {
                 incomingBubble = Color.White,
                 incomingBubbleBorder = Color(0xFFE2E8F0),
                 deletedBubble = Color(0xFFFEF2F2),
-                deletedBubbleBorder = Color(0xFFFCA5A5)
+                deletedBubbleBorder = Color(0xFFFCA5A5),
+                outgoingBubble = getLightOutgoingBubble(palette),
+                outgoingBubbleBorder = palette.primaryColor.copy(alpha = 0.35f)
             )
         }
+    }
+
+    private fun getDarkOutgoingBubble(palette: ColorPalette): Color = when (palette) {
+        ColorPalette.EMERALD -> Color(0xFF0F3822)
+        ColorPalette.ROYAL_BLUE -> Color(0xFF10284A)
+        ColorPalette.ROYAL_PURPLE -> Color(0xFF2E1245)
+        ColorPalette.BLACK_GOLD -> Color(0xFF33290D)
+        ColorPalette.CYAN_TURQUOISE -> Color(0xFF0A2D33)
+        ColorPalette.CRIMSON_RED -> Color(0xFF3A1015)
+        ColorPalette.SLATE_GRAY -> Color(0xFF222830)
+    }
+
+    private fun getLightOutgoingBubble(palette: ColorPalette): Color = when (palette) {
+        ColorPalette.EMERALD -> Color(0xFFE6F9EE)
+        ColorPalette.ROYAL_BLUE -> Color(0xFFEBF3FF)
+        ColorPalette.ROYAL_PURPLE -> Color(0xFFF5ECFF)
+        ColorPalette.BLACK_GOLD -> Color(0xFFFFFBEA)
+        ColorPalette.CYAN_TURQUOISE -> Color(0xFFE6FAF9)
+        ColorPalette.CRIMSON_RED -> Color(0xFFFFECEF)
+        ColorPalette.SLATE_GRAY -> Color(0xFFF1F5F9)
     }
 
     private fun getDarkBackground(palette: ColorPalette): Color = when (palette) {

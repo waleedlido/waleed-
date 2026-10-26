@@ -47,18 +47,36 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
+import com.example.ui.components.BubbleOpacityControls
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -169,9 +187,28 @@ fun ChatDetailScreen(
     // Temporary reveal state: automatically reblurs on exit
     val revealedMessageIds = remember { mutableStateListOf<Long>() }
 
+    var showWallpaperSettingsDialog by remember { mutableStateOf(false) }
+
+    val chatPhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val saved = wallpaperManager.saveCustomPhotoFromUri(uri, isForConversationId = conversationId)
+                if (saved != null) {
+                    Toast.makeText(context, "تم تعيين خلفية المحادثة وتفعيل الشفافية بنجاح ✓", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     BackHandler {
-        revealedMessageIds.clear()
-        onBack()
+        if (showWallpaperSettingsDialog) {
+            showWallpaperSettingsDialog = false
+        } else {
+            revealedMessageIds.clear()
+            onBack()
+        }
     }
 
     var conversation by remember { mutableStateOf<ConversationEntity?>(null) }
@@ -335,6 +372,14 @@ fun ChatDetailScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("خلفية وشفافية المحادثة", color = themeColors.textPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Wallpaper, contentDescription = null, tint = themeColors.primary) },
+                            onClick = {
+                                showMenu = false
+                                showWallpaperSettingsDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("حذف المحادثة إلى السلة", color = DangerRed) },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = DangerRed) },
                             onClick = {
@@ -434,6 +479,8 @@ fun ChatDetailScreen(
 
                         MessageBubble(
                             message = message,
+                            incomingOpacity = wallpaperConfig.incomingBubbleOpacity,
+                            outgoingOpacity = wallpaperConfig.outgoingBubbleOpacity,
                             isBlurred = isBlurActive && !isMessageRevealed,
                             onToggleReveal = {
                                 if (revealedMessageIds.contains(message.id)) {
@@ -605,6 +652,20 @@ fun ChatDetailScreen(
             onDismiss = { selectedMessageForDetails = null }
         )
     }
+
+    if (showWallpaperSettingsDialog) {
+        ChatWallpaperSettingsDialog(
+            conversationId = conversationId,
+            wallpaperConfig = wallpaperConfig,
+            wallpaperManager = wallpaperManager,
+            onPickCustomPhoto = {
+                chatPhotoPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            onDismiss = { showWallpaperSettingsDialog = false }
+        )
+    }
 }
 
 @Composable
@@ -641,10 +702,15 @@ fun DateSeparatorHeader(
  * - Privacy blur support with Eye reveal button.
  * - Compact action buttons (translate, copy, details).
  * - Arabic Date & Time below the bubble.
+ * - Customizable bubble opacity (20% to 100%) independent for incoming & outgoing.
+ * - Retains selected theme colors with alpha applied to bubble container & border only.
+ * - High contrast text shadow for readability over custom wallpapers.
  */
 @Composable
 fun MessageBubble(
     message: MessageEntity,
+    incomingOpacity: Float = 1.0f,
+    outgoingOpacity: Float = 1.0f,
     isBlurred: Boolean,
     onToggleReveal: () -> Unit,
     onBubbleClick: () -> Unit,
@@ -654,25 +720,65 @@ fun MessageBubble(
     val context = LocalContext.current
     val themeColors = VaultTheme.colors
 
+    val isOutgoing = message.senderName.trim() == "أنا" ||
+            message.senderName.equals("me", ignoreCase = true) ||
+            message.senderName.equals("you", ignoreCase = true)
+    val effectiveOpacity = if (isOutgoing) outgoingOpacity else incomingOpacity
+
+    val baseBubbleColor = if (message.isDeletedBySender) {
+        themeColors.deletedBubble
+    } else if (isOutgoing) {
+        themeColors.outgoingBubble
+    } else {
+        themeColors.incomingBubble
+    }
+
+    val baseBorderColor = if (message.isDeletedBySender) {
+        themeColors.deletedBubbleBorder
+    } else if (isOutgoing) {
+        themeColors.outgoingBubbleBorder
+    } else {
+        themeColors.incomingBubbleBorder
+    }
+
+    // Apply opacity ONLY to container background and border, never to text, icons, or dates
+    val bubbleContainerColor = baseBubbleColor.copy(alpha = effectiveOpacity.coerceIn(0.15f, 1f))
+    val bubbleBorderColor = baseBorderColor.copy(alpha = (effectiveOpacity * 0.95f).coerceIn(0.2f, 1f))
+
+    val bubbleAlignment = if (isOutgoing) Alignment.End else Alignment.Start
+    val bubbleShape = if (isOutgoing) {
+        RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+    } else {
+        RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+    }
+
+    // Subtle text shadow when opacity < 0.85 to maintain maximum contrast and readability over any background
+    val textShadow = if (effectiveOpacity < 0.85f) {
+        Shadow(
+            color = Color.Black.copy(alpha = 0.55f),
+            blurRadius = 6f
+        )
+    } else null
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("message_bubble_${message.id}"),
-        horizontalAlignment = Alignment.Start
+        horizontalAlignment = bubbleAlignment
     ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .border(
                     width = 1.dp,
-                    color = if (message.isDeletedBySender) themeColors.deletedBubbleBorder else themeColors.incomingBubbleBorder,
-                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+                    color = bubbleBorderColor,
+                    shape = bubbleShape
                 )
                 .clickable { onBubbleClick() },
             colors = CardDefaults.cardColors(
-                containerColor = if (message.isDeletedBySender) themeColors.deletedBubble else themeColors.incomingBubble
+                containerColor = bubbleContainerColor
             ),
-            shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+            shape = bubbleShape
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
 
@@ -684,9 +790,10 @@ fun MessageBubble(
                 ) {
                     Text(
                         text = message.senderName,
-                        color = if (message.isDeletedBySender) DangerRed else themeColors.primary,
+                        color = if (message.isDeletedBySender) DangerRed else if (isOutgoing) themeColors.secondary else themeColors.primary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
+                        style = if (textShadow != null) TextStyle(shadow = textShadow) else TextStyle.Default,
                         modifier = Modifier.weight(1f)
                     )
 
@@ -721,6 +828,7 @@ fun MessageBubble(
                             color = themeColors.textMuted,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
+                            style = if (textShadow != null) TextStyle(shadow = textShadow) else TextStyle.Default,
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(
@@ -746,6 +854,7 @@ fun MessageBubble(
                             color = themeColors.textPrimary,
                             fontSize = 14.sp,
                             lineHeight = 21.sp,
+                            style = if (textShadow != null) TextStyle(shadow = textShadow) else TextStyle.Default,
                             modifier = Modifier.weight(1f)
                         )
 
@@ -807,7 +916,8 @@ fun MessageBubble(
                                 text = message.translatedText,
                                 color = themeColors.textPrimary,
                                 fontSize = 13.sp,
-                                lineHeight = 19.sp
+                                lineHeight = 19.sp,
+                                style = if (textShadow != null) TextStyle(shadow = textShadow) else TextStyle.Default
                             )
                         }
                     }
@@ -928,6 +1038,257 @@ fun MessageBubble(
             }
         }
     }
+}
+
+@Composable
+fun ChatWallpaperSettingsDialog(
+    conversationId: Long,
+    wallpaperConfig: WallpaperConfig,
+    wallpaperManager: ChatWallpaperManager,
+    onPickCustomPhoto: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val themeColors = VaultTheme.colors
+    val coroutineScope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = themeColors.surface,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Wallpaper,
+                    contentDescription = null,
+                    tint = themeColors.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "خلفية وشفافية المحادثة",
+                    color = themeColors.textPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "تخصيص خلفية هذه المحادثة ومستوى شفافية فقاعات الرسائل:",
+                    color = themeColors.textMuted,
+                    fontSize = 11.5.sp
+                )
+
+                // Photo picker button
+                Button(
+                    onClick = onPickCustomPhoto,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = themeColors.primaryContainer,
+                        contentColor = themeColors.primary
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (wallpaperConfig.wallpaperType == WallpaperType.CUSTOM_PHOTO) "تغيير صورة الخلفية من المعرض" else "اختيار صورة من المعرض",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Preset Gradients
+                Text(
+                    text = "أو اختر تدرجاً جاهزاً:",
+                    color = themeColors.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    item {
+                        val isDefault = wallpaperConfig.wallpaperType == WallpaperType.DEFAULT
+                        Box(
+                            modifier = Modifier
+                                .size(width = 75.dp, height = 50.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(themeColors.background)
+                                .border(
+                                    width = if (isDefault) 2.dp else 1.dp,
+                                    color = if (isDefault) themeColors.primary else themeColors.border,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    coroutineScope.launch {
+                                        wallpaperManager.setDefaultWallpaper(conversationId)
+                                    }
+                                }
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("الافتراضي", color = themeColors.textSecondary, fontSize = 10.5.sp)
+                        }
+                    }
+
+                    items(wallpaperManager.presetWallpapers) { preset ->
+                        val isSelected = wallpaperConfig.wallpaperType == WallpaperType.PRESET && wallpaperConfig.presetId == preset.id
+                        Box(
+                            modifier = Modifier
+                                .size(width = 75.dp, height = 50.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Brush.verticalGradient(preset.gradientColors))
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = if (isSelected) themeColors.primary else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    coroutineScope.launch {
+                                        wallpaperManager.setPresetWallpaper(preset.id, conversationId)
+                                    }
+                                }
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = preset.nameAr,
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = themeColors.border.copy(alpha = 0.5f))
+
+                // Dimming Slider
+                val currentDim = (wallpaperConfig.dimAlpha * 100).toInt()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "تعتيم الخلفية: $currentDim%",
+                        color = themeColors.textPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "افتراضي: 40%",
+                        color = themeColors.textMuted,
+                        fontSize = 10.sp
+                    )
+                }
+
+                Slider(
+                    value = wallpaperConfig.dimAlpha,
+                    onValueChange = {
+                        coroutineScope.launch {
+                            wallpaperManager.setDimAlpha(it, conversationId)
+                        }
+                    },
+                    valueRange = 0.0f..0.80f,
+                    steps = 7,
+                    colors = SliderDefaults.colors(
+                        thumbColor = themeColors.primary,
+                        activeTrackColor = themeColors.primary,
+                        inactiveTrackColor = themeColors.surfaceElevated
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Blur toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("تمويه الخلفية (Blur)", color = themeColors.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("ضبابية ناعمة للخلفية لزيادة وضوح النص", color = themeColors.textMuted, fontSize = 10.sp)
+                    }
+                    Switch(
+                        checked = wallpaperConfig.isBlurred,
+                        onCheckedChange = {
+                            coroutineScope.launch {
+                                wallpaperManager.setBlurred(it, conversationId)
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = themeColors.primary,
+                            uncheckedThumbColor = themeColors.textMuted,
+                            uncheckedTrackColor = themeColors.surfaceElevated
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = themeColors.border.copy(alpha = 0.5f))
+
+                // Bubble Opacity Controls
+                BubbleOpacityControls(
+                    wallpaperConfig = wallpaperConfig,
+                    onIncomingOpacityChange = {
+                        coroutineScope.launch {
+                            wallpaperManager.setIncomingBubbleOpacity(it, conversationId)
+                        }
+                    },
+                    onOutgoingOpacityChange = {
+                        coroutineScope.launch {
+                            wallpaperManager.setOutgoingBubbleOpacity(it, conversationId)
+                        }
+                    },
+                    onLinkedChange = {
+                        coroutineScope.launch {
+                            wallpaperManager.setLinkedBubbleOpacity(it, conversationId)
+                        }
+                    },
+                    onResetToDefault = {
+                        coroutineScope.launch {
+                            wallpaperManager.resetBubbleOpacityToDefault(conversationId)
+                        }
+                    }
+                )
+
+                if (wallpaperConfig.wallpaperType != WallpaperType.DEFAULT) {
+                    TextButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                wallpaperManager.setDefaultWallpaper(conversationId)
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = DangerRed, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("إلغاء خلفية هذه المحادثة", color = DangerRed, fontSize = 11.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = themeColors.primary,
+                    contentColor = Color.Black
+                )
+            ) {
+                Text("تم وحفظ", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
 }
 
 @Composable

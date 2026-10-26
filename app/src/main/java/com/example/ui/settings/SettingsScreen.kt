@@ -119,10 +119,11 @@ import com.example.ui.permissions.HonorOptimizationCard
 import com.example.ui.theme.AppThemeManager
 import com.example.ui.theme.ColorPalette
 import com.example.ui.theme.DangerRed
+import com.example.ui.theme.ThemeConfig
 import com.example.ui.theme.ThemeMode
 import com.example.ui.theme.VaultTheme
 import com.example.ui.theme.WarningOrange
-import com.example.ui.theme.ThemeConfig
+import com.example.ui.components.BubbleOpacityControls
 import com.example.util.AppNotificationManager
 import com.example.util.ChatWallpaperManager
 import com.example.util.LockScreenPrivacy
@@ -619,6 +620,19 @@ fun SettingsScreen(
                             )
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = colors.cardBorder)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Message Bubble Opacity Section (20% to 100%, independent incoming/outgoing or linked)
+                    BubbleOpacityControls(
+                        wallpaperConfig = wallpaperConfig,
+                        onIncomingOpacityChange = { wallpaperManager.setIncomingBubbleOpacity(it) },
+                        onOutgoingOpacityChange = { wallpaperManager.setOutgoingBubbleOpacity(it) },
+                        onLinkedChange = { wallpaperManager.setLinkedBubbleOpacity(it) },
+                        onResetToDefault = { wallpaperManager.resetBubbleOpacityToDefault() }
+                    )
 
                     if (wallpaperConfig.wallpaperType != WallpaperType.DEFAULT) {
                         Spacer(modifier = Modifier.height(10.dp))

@@ -212,6 +212,7 @@ fun SettingsScreen(
     val lastReceivedEvent by NotificationVaultService.lastReceivedEvent.collectAsState()
     val lastSavedMessage by NotificationVaultService.lastSavedMessage.collectAsState()
     val lastError by NotificationVaultService.lastError.collectAsState()
+    val diagnostics by NotificationVaultService.diagnostics.collectAsState()
 
     val modelDownloadState by translationManager.modelDownloadState.collectAsState()
     val isArabicModelDownloaded by translationManager.isArabicModelDownloaded.collectAsState()
@@ -1183,6 +1184,48 @@ fun SettingsScreen(
 
                     HorizontalDivider(color = colors.cardBorder, modifier = Modifier.padding(vertical = 10.dp))
 
+                    // Diagnostic telemetry counters (Battery & Processing efficiency)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "إحصائيات المعالجة واستهلاك الطاقة (HONOR / Android):",
+                            color = colors.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            DiagnosticMetricBadge(
+                                label = "المستلمة",
+                                count = diagnostics.receivedCount.toString(),
+                                color = colors.primary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            DiagnosticMetricBadge(
+                                label = "المعالجة",
+                                count = diagnostics.processedCount.toString(),
+                                color = com.example.ui.theme.NeonGreen,
+                                modifier = Modifier.weight(1f)
+                            )
+                            DiagnosticMetricBadge(
+                                label = "المتجاهلة",
+                                count = diagnostics.ignoredCount.toString(),
+                                color = colors.textMuted,
+                                modifier = Modifier.weight(1f)
+                            )
+                            DiagnosticMetricBadge(
+                                label = "الأخطاء",
+                                count = diagnostics.errorsCount.toString(),
+                                color = if (diagnostics.errorsCount > 0) DangerRed else colors.textMuted,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = colors.cardBorder, modifier = Modifier.padding(vertical = 10.dp))
+
                     // 3. Last received notification
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text("آخر إشعار مستلم عبر النظام:", color = colors.textPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -1595,6 +1638,40 @@ fun DiagnosticRow(
         }
     }
 }
+
+@Composable
+private fun DiagnosticMetricBadge(
+    label: String,
+    count: String,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    val colors = VaultTheme.colors
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.surfaceElevated)
+            .border(1.dp, colors.cardBorder, RoundedCornerShape(8.dp))
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = count,
+                color = color,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = label,
+                color = colors.textSecondary,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
 
 @Composable
 fun NotificationSubToggleRow(

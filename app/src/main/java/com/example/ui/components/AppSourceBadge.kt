@@ -4,11 +4,17 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -95,22 +101,23 @@ fun AppAvatarIcon(
             }
         }
 
-        // Single elegant "مستنسخ" badge for HONOR MagicOS App Twin
+        // Single sleek micro layers icon badge for HONOR MagicOS App Twin (No text truncation, unobtrusive)
         if (isClonedApp) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF00363A))
-                    .border(0.8.dp, CyanAccent, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                    .offset(x = 1.dp, y = 1.dp)
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF031620))
+                    .border(0.8.dp, CyanAccent, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "مستنسخ",
-                    color = CyanAccent,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
+                Icon(
+                    imageVector = Icons.Default.Layers,
+                    contentDescription = "نسخة مستنسخة (App Twin)",
+                    tint = CyanAccent,
+                    modifier = Modifier.size(9.dp)
                 )
             }
         }
@@ -172,17 +179,18 @@ fun AppSourceIcon(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .offset(x = 2.dp, y = 2.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(Color(0xFF00363A))
-                    .border(0.6.dp, CyanAccent, RoundedCornerShape(3.dp))
-                    .padding(horizontal = 2.5.dp, vertical = 0.5.dp)
+                    .offset(x = 1.dp, y = 1.dp)
+                    .size(13.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF031620))
+                    .border(0.7.dp, CyanAccent, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "مستنسخ",
-                    color = CyanAccent,
-                    fontSize = 7.sp,
-                    fontWeight = FontWeight.Bold
+                Icon(
+                    imageVector = Icons.Default.Layers,
+                    contentDescription = "نسخة مستنسخة (App Twin)",
+                    tint = CyanAccent,
+                    modifier = Modifier.size(7.dp)
                 )
             }
         }
@@ -205,12 +213,23 @@ fun AppSourceBadge(
             .background(SurfaceElevatedDark)
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
-        Text(
-            text = appLabel,
-            color = CyanAccent,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isClonedApp) {
+                Icon(
+                    imageVector = Icons.Default.Layers,
+                    contentDescription = null,
+                    tint = CyanAccent,
+                    modifier = Modifier.size(10.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+            }
+            Text(
+                text = appLabel,
+                color = CyanAccent,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 

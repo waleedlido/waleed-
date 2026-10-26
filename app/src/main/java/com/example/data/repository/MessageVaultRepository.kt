@@ -4,6 +4,7 @@ import com.example.MessageVaultApp
 import com.example.data.database.MessageVaultDatabase
 import com.example.data.model.ConversationEntity
 import com.example.data.model.MessageEntity
+import com.example.util.NotificationTextFilter
 import com.example.util.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -67,17 +68,69 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
             return@withContext SaveResult.Ignored("Deletion notice could not be matched")
         }
 
-        // De-duplication hash: package + chatTitle + sender + text + timestamp bucket (3s window)
-        val timeBucket = timestamp / 3000
-        val rawHash = "$packageName|$chatTitle|$senderName|$trimmedText|$isClonedApp|$timeBucket"
-        val contentHash = md5(rawHash)
-
-        val existingMessage = messageDao.findMessageByHash(contentHash)
-        if (existingMessage != null) {
-            return@withContext SaveResult.Duplicate
+        // Prevent saving summary or counter phrases (e.g. "رسالتان جديدتان" or "2 new messages")
+        if (NotificationTextFilter.isSummaryOrCounterText(trimmedText)) {
+            return@withContext SaveResult.Ignored("Summary counter not saved as message")
         }
 
-        // Retrieve or create conversation
+        val singleMsg = ExtractedNotificationMessage(
+            senderName = senderName.ifBlank { chatTitle },
+            text = trimmedText,
+            timestamp = timestamp
+        )
+
+        saveIncomingBatchNotification(
+            packageName = packageName,
+            appDisplayName = appDisplayName,
+            chatTitle = chatTitle,
+            messages = listOf(singleMsg),
+            isClonedApp = isClonedApp,
+            userHandleId = userHandleId
+        )
+    }
+
+    suspend fun saveIncomingBatchNotification(
+        packageName: String,
+        appDisplayName: String,
+        chatTitle: String,
+        messages: List<ExtractedNotificationMessage>,
+        isClonedApp: Boolean,
+        userHandleId: Int
+    ): SaveResult = withContext(Dispatchers.IO) {
+        if (chatTitle.isBlank()) {
+            return@withContext SaveResult.Ignored("Empty chat title")
+        }
+
+        // Filter valid messages: eliminate counters like "رسالتان جديدتان", "2 new messages", etc.
+        val validMessages = messages.filter { NotificationTextFilter.isValidMessageContent(it.text) }
+
+        if (validMessages.isEmpty()) {
+            // Check if any message is a deletion indicator
+            val deletionMsg = messages.firstOrNull { isDeletionIndicator(it.text) }
+            if (deletionMsg != null) {
+                val conversation = conversationDao.findConversation(packageName, chatTitle, isClonedApp)
+                if (conversation != null) {
+                    val latestMessage = messageDao.getLatestNonDeletedMessage(conversation.id)
+                    if (latestMessage != null) {
+                        messageDao.markMessageDeleted(latestMessage.id, deletionMsg.timestamp)
+                        val updatedConv = conversation.copy(
+                            deletedMessagesCount = conversation.deletedMessagesCount + 1
+                        )
+                        conversationDao.updateConversation(updatedConv)
+                        return@withContext SaveResult.MarkedDeleted(
+                            messageId = latestMessage.id,
+                            conversationId = conversation.id,
+                            deletedMessageText = latestMessage.messageText
+                        )
+                    }
+                }
+            }
+            return@withContext SaveResult.Ignored("No valid content to persist")
+        }
+
+        // Sort chronologically
+        val sortedMessages = validMessages.sortedBy { it.timestamp }
+
         var conversation = conversationDao.findConversation(packageName, chatTitle, isClonedApp)
         val conversationId: Long
 
@@ -91,43 +144,72 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
                 chatTitle = chatTitle,
                 isClonedApp = isClonedApp,
                 userHandleId = userHandleId,
-                lastMessageText = trimmedText,
-                lastMessageTimestamp = timestamp,
-                messageCount = 1,
+                lastMessageText = sortedMessages.last().text.trim(),
+                lastMessageTimestamp = sortedMessages.last().timestamp,
+                messageCount = 0,
                 deletedMessagesCount = 0,
                 isInTrash = false,
                 trashedAt = null
             )
             conversationId = conversationDao.insertConversation(newConversation)
+            conversation = conversationDao.getConversationById(conversationId)
         } else {
             conversationId = conversation.id
-            // If conversation is in trash, save message without losing it!
-            // Restore only if auto-restore setting is explicitly enabled
+        }
+
+        var savedCount = 0
+        var lastSavedMessageId = 0L
+        var latestSavedMessage: ExtractedNotificationMessage? = null
+
+        for ((index, item) in sortedMessages.withIndex()) {
+            val trimmedText = item.text.trim()
+            val sender = item.senderName.ifBlank { chatTitle }
+            val time = item.timestamp
+
+            // Stable hash: package + chatTitle + sender + text + clone status + exact timestamp + batch index
+            // Distinguishes genuine identical texts sent at different timestamps or distinct order
+            val rawHash = "$packageName|$chatTitle|$sender|$trimmedText|$isClonedApp|${time}#$index"
+            val contentHash = md5(rawHash)
+
+            val existing = messageDao.findMessageByHash(contentHash)
+            if (existing == null) {
+                val entity = MessageEntity(
+                    conversationId = conversationId,
+                    senderName = sender,
+                    messageText = trimmedText,
+                    timestamp = time,
+                    isDeletedBySender = false,
+                    contentHash = contentHash,
+                    isFromClonedApp = isClonedApp
+                )
+                lastSavedMessageId = messageDao.insertMessage(entity)
+                savedCount++
+                latestSavedMessage = item
+            }
+        }
+
+        if (savedCount > 0 && conversation != null) {
+            val latest = latestSavedMessage ?: sortedMessages.last()
             val newTrashState = if (conversation.isInTrash && shouldAutoRestore) false else conversation.isInTrash
             val newTrashedAt = if (conversation.isInTrash && shouldAutoRestore) null else conversation.trashedAt
 
             val updatedConv = conversation.copy(
-                lastMessageText = trimmedText,
-                lastMessageTimestamp = timestamp,
-                messageCount = conversation.messageCount + 1,
+                lastMessageText = latest.text.trim(),
+                lastMessageTimestamp = latest.timestamp,
+                messageCount = conversation.messageCount + savedCount,
                 appDisplayName = appDisplayName,
                 isInTrash = newTrashState,
                 trashedAt = newTrashedAt
             )
             conversationDao.updateConversation(updatedConv)
+            return@withContext SaveResult.Saved(lastSavedMessageId, conversationId)
         }
 
-        val message = MessageEntity(
-            conversationId = conversationId,
-            senderName = senderName.ifBlank { chatTitle },
-            messageText = trimmedText,
-            timestamp = timestamp,
-            isDeletedBySender = false,
-            contentHash = contentHash,
-            isFromClonedApp = isClonedApp
-        )
-        val messageId = messageDao.insertMessage(message)
-        SaveResult.Saved(messageId, conversationId)
+        if (savedCount == 0) {
+            return@withContext SaveResult.Duplicate
+        }
+
+        SaveResult.Saved(lastSavedMessageId, conversationId)
     }
 
     suspend fun updateMessageTranslation(messageId: Long, translatedText: String, language: String) =
@@ -354,3 +436,10 @@ data class VaultStats(
     val deletedMessagesCount: Int,
     val lastMessage: MessageEntity?
 )
+
+data class ExtractedNotificationMessage(
+    val senderName: String,
+    val text: String,
+    val timestamp: Long
+)
+

@@ -41,8 +41,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.DeletedMessagesChartStats
 import com.example.data.repository.MessageVaultRepository
 import com.example.ui.components.AppAvatarIcon
+import com.example.ui.components.RechartsDeletedMessagesChart
 import com.example.ui.home.formatTime
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.DangerRedContainer
@@ -64,175 +66,210 @@ fun DeletedTab(
     val deletedConversations = conversations.filter { it.deletedMessagesCount > 0 }
     val totalDeletedMessages = deletedConversations.sumOf { it.deletedMessagesCount }
 
-    Column(
+    val chartStats by repository.deletedMessagesChartStatsFlow.collectAsState(
+        initial = DeletedMessagesChartStats.calculate(emptyList())
+    )
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(16.dp)
+            .testTag("deleted_tab_content"),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 90.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Stats Banner
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
-            colors = CardDefaults.cardColors(containerColor = DangerRedContainer.copy(alpha = 0.5f)),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+        // 1. Stats Banner
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
+                colors = CardDefaults.cardColors(containerColor = DangerRedContainer.copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(16.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(DangerRed.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteSweep,
-                        contentDescription = null,
-                        tint = DangerRed,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "سجل الرسائل المحذوفة الموثقة",
-                        color = DangerRed,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$totalDeletedMessages رسالة قام أصحابها بحذفها ولكنها محفوظة لديك 🔒",
-                        color = colors.textSecondary,
-                        fontSize = 11.sp
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(DangerRed.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "سجل الرسائل المحذوفة الموثقة",
+                            color = DangerRed,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "$totalDeletedMessages رسالة قام أصحابها بحذفها ولكنها محفوظة لديك 🔒",
+                            color = colors.textSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        // 2. New Recharts-Inspired Daily & Weekly Deleted Messages Chart Section
+        item {
+            RechartsDeletedMessagesChart(
+                stats = chartStats,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
-        if (deletedConversations.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
+        // 3. Section Title
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(colors.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = colors.accent,
-                            modifier = Modifier.size(36.dp)
+                Text(
+                    text = "المحادثات المحتوية على رسائل محذوفة (${deletedConversations.size})",
+                    color = colors.textPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // 4. Conversations List or Empty State
+        if (deletedConversations.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(colors.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = null,
+                                tint = colors.accent,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "لا توجد رسائل محذوفة حتى الآن",
+                            color = colors.textPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "عندما يرسل لك شخص رسالة على واتساب أو تيليجرام ثم يضغط \"حذف لدى الجميع\"، سيتم توثيقها والاحتفاظ بها هنا فورًا وتحديث الرسم البياني أعلاه.",
+                            color = colors.textMuted,
+                            fontSize = 11.5.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "لا توجد رسائل محذوفة حتى الآن",
-                        color = colors.textPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "عندما يرسل لك شخص رسالة على واتساب أو تيليجرام ثم يضغط \"حذف لدى الجميع\"، سيتم توثيقها والاحتفاظ بها هنا فورًا دون فقدانها.",
-                        color = colors.textMuted,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("deleted_conversations_list"),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-                items(deletedConversations, key = { it.id }) { conv ->
-                    val shouldBlurSender = privacyConfig.isMasterBlurActive && privacyConfig.blurSenderNames
-                    val shouldBlurPreview = privacyConfig.isMasterBlurActive && privacyConfig.blurHomePreviews
+            items(deletedConversations, key = { it.id }) { conv ->
+                val shouldBlurSender = privacyConfig.isMasterBlurActive && privacyConfig.blurSenderNames
+                val shouldBlurPreview = privacyConfig.isMasterBlurActive && privacyConfig.blurHomePreviews
 
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(1.dp, colors.cardBorder, RoundedCornerShape(16.dp))
-                            .clickable { onConversationClick(conv.id) },
-                        colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(1.dp, colors.cardBorder, RoundedCornerShape(16.dp))
+                        .clickable { onConversationClick(conv.id) },
+                    colors = CardDefaults.cardColors(containerColor = colors.cardBackground)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Single dedicated app avatar (50dp) with clone badge if twin
-                            AppAvatarIcon(
-                                packageName = conv.packageName,
-                                chatTitle = conv.chatTitle,
-                                isClonedApp = conv.isClonedApp,
-                                size = 50.dp
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // True sender name
-                                    Text(
-                                        text = conv.chatTitle,
-                                        color = colors.textPrimary,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier
-                                            .weight(1f, fill = false)
-                                            .then(if (shouldBlurSender) Modifier.blur(8.dp) else Modifier)
-                                    )
-                                    Text(
-                                        text = formatTime(conv.lastMessageTimestamp),
-                                        color = colors.textMuted,
-                                        fontSize = 10.sp
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
+                        // Single dedicated app avatar (50dp) with clone badge if twin
+                        AppAvatarIcon(
+                            packageName = conv.packageName,
+                            isClonedApp = conv.isClonedApp,
+                            size = 50.dp
+                        )
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = conv.lastMessageText,
-                                    color = colors.textSecondary,
-                                    fontSize = 12.sp,
+                                    text = conv.chatTitle,
+                                    color = colors.textPrimary,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = if (shouldBlurPreview) Modifier.blur(8.dp) else Modifier
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(DangerRedContainer)
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "${conv.deletedMessagesCount} رسالة محذوفة",
-                                        color = DangerRed,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                        .weight(1f)
+                                        .then(if (shouldBlurSender) Modifier.blur(8.dp) else Modifier)
+                                )
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                Text(
+                                    text = formatTime(conv.lastMessageTimestamp),
+                                    color = colors.textMuted,
+                                    fontSize = 10.sp
+                                )
                             }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = conv.lastMessageText,
+                                color = colors.textSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = if (shouldBlurPreview) Modifier.blur(10.dp) else Modifier
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // High contrast deleted badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(DangerRedContainer)
+                                .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${conv.deletedMessagesCount} محذوفة",
+                                color = DangerRed,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

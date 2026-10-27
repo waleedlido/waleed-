@@ -60,4 +60,10 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages ORDER BY timestamp ASC")
     suspend fun getAllMessagesList(): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE isDeletedBySender = 1 ORDER BY timestamp ASC")
+    fun getAllDeletedMessagesFlow(): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages WHERE isDeletedBySender = 1 ORDER BY timestamp ASC")
+    suspend fun getAllDeletedMessagesList(): List<MessageEntity>
 }

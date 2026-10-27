@@ -124,6 +124,8 @@ import com.example.ui.theme.ThemeMode
 import com.example.ui.theme.VaultTheme
 import com.example.ui.theme.WarningOrange
 import com.example.ui.components.BubbleOpacityControls
+import com.example.ui.components.RechartsDeletedMessagesChart
+import com.example.data.model.DeletedMessagesChartStats
 import com.example.util.AppNotificationManager
 import com.example.util.ChatWallpaperManager
 import com.example.util.LockScreenPrivacy
@@ -218,6 +220,7 @@ fun SettingsScreen(
     val modelDownloadState by translationManager.modelDownloadState.collectAsState()
     val isArabicModelDownloaded by translationManager.isArabicModelDownloaded.collectAsState()
     val isEnglishModelDownloaded by translationManager.isEnglishModelDownloaded.collectAsState()
+    val chartStats by repository.deletedMessagesChartStatsFlow.collectAsState(initial = DeletedMessagesChartStats.calculate(emptyList()))
 
     var isLockEnabled by remember { mutableStateOf(securityManager.isLockEnabled()) }
     var pinValue by remember { mutableStateOf("") }
@@ -1323,6 +1326,12 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            // Visual Chart Section (Daily & Weekly)
+            RechartsDeletedMessagesChart(
+                stats = chartStats,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             // Real Test Notification Injection Button
             Card(

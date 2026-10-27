@@ -8,6 +8,7 @@ import com.example.util.NotificationTextFilter
 import com.example.util.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -21,6 +22,12 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
     val allConversations: Flow<List<ConversationEntity>> = conversationDao.getAllConversationsFlow()
     val trashConversations: Flow<List<ConversationEntity>> = conversationDao.getTrashConversationsFlow()
     val trashCount: Flow<Int> = conversationDao.getTrashCountFlow()
+    val allDeletedMessages: Flow<List<MessageEntity>> = messageDao.getAllDeletedMessagesFlow()
+
+    val deletedMessagesChartStatsFlow: Flow<com.example.data.model.DeletedMessagesChartStats> =
+        messageDao.getAllDeletedMessagesFlow().map { list ->
+            com.example.data.model.DeletedMessagesChartStats.calculate(list)
+        }
 
     fun searchConversations(query: String): Flow<List<ConversationEntity>> =
         conversationDao.searchConversationsFlow(query)

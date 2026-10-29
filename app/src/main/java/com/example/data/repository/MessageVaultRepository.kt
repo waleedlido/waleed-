@@ -141,8 +141,12 @@ class MessageVaultRepository(private val database: MessageVaultDatabase) {
         var conversation = conversationDao.findConversation(packageName, chatTitle, isClonedApp)
         val conversationId: Long
 
-        val prefManager = PreferenceManager(MessageVaultApp.get())
-        val shouldAutoRestore = prefManager.isAutoRestoreOnNewMessage()
+        val shouldAutoRestore = try {
+            val app = MessageVaultApp.instance
+            if (app != null) PreferenceManager(app).isAutoRestoreOnNewMessage() else false
+        } catch (_: Exception) {
+            false
+        }
 
         if (conversation == null) {
             val newConversation = ConversationEntity(

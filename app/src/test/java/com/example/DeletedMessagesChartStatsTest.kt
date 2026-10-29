@@ -29,22 +29,34 @@ class DeletedMessagesChartStatsTest {
 
     @Test
     fun testDailyBucketingPlacesMessagesInCorrectDays() {
-        val now = System.currentTimeMillis()
-
-        // Today 00:30
-        val cal = Calendar.getInstance().apply {
-            timeInMillis = now
-            set(Calendar.HOUR_OF_DAY, 1)
+        // Use a fixed midday anchor so hour offsets never roll into adjacent days
+        val anchorCal = Calendar.getInstance().apply {
+            set(2026, Calendar.OCTOBER, 28, 14, 0, 0)
+            set(Calendar.MILLISECOND, 0)
         }
-        val todayMsgTime = cal.timeInMillis
+        val now = anchorCal.timeInMillis
 
-        // Yesterday 14:00
-        cal.add(Calendar.DAY_OF_YEAR, -1)
-        val yesterdayMsgTime = cal.timeInMillis
+        // Today 10:00 AM
+        val todayCal = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+        val todayMsgTime = todayCal.timeInMillis
 
-        // 3 days ago
-        cal.add(Calendar.DAY_OF_YEAR, -2)
-        val threeDaysAgoMsgTime = cal.timeInMillis
+        // Yesterday 10:00 AM
+        val yesterdayCal = Calendar.getInstance().apply {
+            timeInMillis = todayMsgTime
+            add(Calendar.DAY_OF_YEAR, -1)
+        }
+        val yesterdayMsgTime = yesterdayCal.timeInMillis
+
+        // 3 days ago 10:00 AM
+        val threeDaysAgoCal = Calendar.getInstance().apply {
+            timeInMillis = todayMsgTime
+            add(Calendar.DAY_OF_YEAR, -3)
+        }
+        val threeDaysAgoMsgTime = threeDaysAgoCal.timeInMillis
 
         val messages = listOf(
             MessageEntity(
@@ -113,13 +125,25 @@ class DeletedMessagesChartStatsTest {
 
     @Test
     fun testWeeklyBucketingPlacesOlderMessagesCorrectly() {
-        val now = System.currentTimeMillis()
+        val anchorCal = Calendar.getInstance().apply {
+            set(2026, Calendar.OCTOBER, 28, 14, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val now = anchorCal.timeInMillis
 
-        // 10 days ago (belongs to Week 1: "الأسبوع الماضي")
-        val tenDaysAgo = now - 10L * 24 * 60 * 60 * 1000
+        // 10 days ago at midday (belongs to Week 1: "الأسبوع الماضي")
+        val tenDaysAgoCal = Calendar.getInstance().apply {
+            timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, -10)
+        }
+        val tenDaysAgo = tenDaysAgoCal.timeInMillis
 
-        // 22 days ago (belongs to Week 3: "منذ 3 أسابيع")
-        val twentyTwoDaysAgo = now - 22L * 24 * 60 * 60 * 1000
+        // 22 days ago at midday (belongs to Week 3: "منذ 3 أسابيع")
+        val twentyTwoDaysAgoCal = Calendar.getInstance().apply {
+            timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, -22)
+        }
+        val twentyTwoDaysAgo = twentyTwoDaysAgoCal.timeInMillis
 
         val messages = listOf(
             MessageEntity(

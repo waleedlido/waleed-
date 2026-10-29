@@ -25,7 +25,7 @@ data class DeletedMessagesChartStats(
     val peakWeekCount: Int
 ) {
     companion object {
-        private val arabicLocale = Locale("ar")
+        private val arabicLocale = Locale.forLanguageTag("ar")
 
         fun calculate(
             deletedMessages: List<MessageEntity>,
@@ -38,10 +38,8 @@ data class DeletedMessagesChartStats(
             val dayFormat = SimpleDateFormat("EEEE", arabicLocale)
             val dayMonthFormat = SimpleDateFormat("d MMMM", arabicLocale)
 
-            val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
-
             for (i in 6 downTo 0) {
-                val dayCal = Calendar.getInstance().apply {
+                val dayStartCal = Calendar.getInstance().apply {
                     timeInMillis = nowMillis
                     add(Calendar.DAY_OF_YEAR, -i)
                     set(Calendar.HOUR_OF_DAY, 0)
@@ -49,8 +47,16 @@ data class DeletedMessagesChartStats(
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                val startOfDay = dayCal.timeInMillis
-                val endOfDay = startOfDay + 24 * 60 * 60 * 1000 - 1
+                val startOfDay = dayStartCal.timeInMillis
+
+                val dayEndCal = Calendar.getInstance().apply {
+                    timeInMillis = startOfDay
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 999)
+                }
+                val endOfDay = dayEndCal.timeInMillis
 
                 val countForDay = deletedMessages.count { msg ->
                     val eventTime = if (msg.deletedDetectedAt != null && msg.deletedDetectedAt > 0) {
@@ -93,7 +99,16 @@ data class DeletedMessagesChartStats(
                     set(Calendar.MILLISECOND, 999)
                 }
                 val endOfWeek = weekEndCal.timeInMillis
-                val startOfWeek = endOfWeek - 7L * 24 * 60 * 60 * 1000 + 1
+
+                val weekStartCal = Calendar.getInstance().apply {
+                    timeInMillis = endOfWeek
+                    add(Calendar.DAY_OF_YEAR, -6)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val startOfWeek = weekStartCal.timeInMillis
 
                 val countForWeek = deletedMessages.count { msg ->
                     val eventTime = if (msg.deletedDetectedAt != null && msg.deletedDetectedAt > 0) {
@@ -123,8 +138,17 @@ data class DeletedMessagesChartStats(
                 )
             }
 
-            val peakDay = dailyList.maxByOrNull { it.count }
-            val peakWeek = weeklyList.maxByOrNull { it.count }
+            val peakDay = if (dailyList.any { it.count > 0 }) {
+                dailyList.filter { it.count > 0 }.maxWithOrNull(compareBy({ it.count }, { it.dateMillis }))
+            } else {
+                null
+            }
+
+            val peakWeek = if (weeklyList.any { it.count > 0 }) {
+                weeklyList.filter { it.count > 0 }.maxWithOrNull(compareBy({ it.count }, { it.dateMillis }))
+            } else {
+                null
+            }
 
             val dailySum = dailyList.sumOf { it.count }
             val dailyAvg = if (dailyList.isNotEmpty()) dailySum.toFloat() / dailyList.size else 0f

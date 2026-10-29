@@ -42,7 +42,8 @@ class MessageVaultApp : Application() {
         const val CHANNEL_SERVICE = "vault_service_channel"
 
         @Volatile
-        private var instance: MessageVaultApp? = null
+        var instance: MessageVaultApp? = null
+            internal set
 
         fun get(): MessageVaultApp = instance ?: error("MessageVaultApp not initialized")
     }
